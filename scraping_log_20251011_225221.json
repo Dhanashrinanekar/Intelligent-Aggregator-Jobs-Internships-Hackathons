@@ -1,0 +1,33 @@
+{
+  "start_time": "2025-10-11 22:52:21",
+  "end_time": "2025-10-11 22:58:17",
+  "duration_seconds": 356.099467,
+  "stats": {
+    "total_jobs": 275,
+    "by_portal": {
+      "Indeed.com": 75,
+      "Naukri.com": 100,
+      "Jooble.org": 100
+    },
+    "by_category": {
+      "software developer": 55,
+      "data scientist": 55,
+      "business analyst": 55,
+      "sales executive": 55,
+      "accountant": 55
+    },
+    "duplicates_skipped": 0,
+    "errors": []
+  },
+  "config": {
+    "portals": [
+      "indeed",
+      "naukri",
+      "jooble"
+    ],
+    "location": "India",
+    "pages_per_category": 1,
+    "save_to_db": true,
+    "delay_between_categories": 5
+  }
+}

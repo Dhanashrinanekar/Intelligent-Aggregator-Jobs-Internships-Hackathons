@@ -1,0 +1,28 @@
+{
+    "sqltools.connections": [
+        {
+            "ssh": "Disabled",
+            "previewLimit": 50,
+            "server": "localhost",
+            "port": 5432,
+            "driver": "PostgreSQL",
+            "name": "pglocal",
+            "database": "job_aggregator",
+            "username": "dhanashri",
+            "password": "Pass@123",
+            "connectionTimeout": 30
+        },
+        {
+            "ssh": "Disabled",
+            "previewLimit": 50,
+            "server": "localhost",
+            "port": 5432,
+            "driver": "PostgreSQL",
+            "name": "pg",
+            "database": "job_aggregator",
+            "username": "postgres",
+            "password": "Pass123",
+            "connectionTimeout": 30
+        }
+    ]
+}
