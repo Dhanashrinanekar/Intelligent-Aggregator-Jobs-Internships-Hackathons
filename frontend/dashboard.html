@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - AI Job Aggregator</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="static/css/style.css">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container">
+            <a class="navbar-brand" href="/">
+                <i class="fas fa-briefcase me-2"></i>AI Job Aggregator
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/dashboard">Dashboard</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/upload-resume">Upload Resume</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/recommendations">Recommendations</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/jobs">Browse Jobs</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" id="logoutBtn">Logout</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container py-5">
+        <h1 class="mb-4">Welcome, <span id="userName">User</span>!</h1>
+
+        <div class="row g-4">
+            <!-- Profile Card -->
+            <div class="col-md-4">
+                <div class="card h-100 shadow-sm">
+                    <div class="card-body">
+                        <h5 class="card-title"><i class="fas fa-user me-2"></i>Your Profile</h5>
+                        <hr>
+                        <p><strong>Email:</strong> <span id="userEmail">-</span></p>
+                        <p><strong>Skills:</strong></p>
+                        <div id="userSkills" class="mb-3">
+                            <span class="badge bg-secondary">No skills added</span>
+                        </div>
+                        <p><strong>Resume:</strong> <span id="resumeStatus" class="badge bg-warning">Not uploaded</span></p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quick Actions -->
+            <div class="col-md-8">
+                <div class="card shadow-sm mb-4">
+                    <div class="card-body">
+                        <h5 class="card-title"><i class="fas fa-bolt me-2"></i>Quick Actions</h5>
+                        <hr>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <a href="/upload-resume" class="btn btn-primary w-100">
+                                    <i class="fas fa-upload me-2"></i>Upload Resume
+                                </a>
+                            </div>
+                            <div class="col-md-6">
+                                <a href="/recommendations" class="btn btn-success w-100">
+                                    <i class="fas fa-star me-2"></i>View Recommendations
+                                </a>
+                            </div>
+                            <div class="col-md-6">
+                                <a href="/jobs" class="btn btn-info w-100">
+                                    <i class="fas fa-search me-2"></i>Search Jobs
+                                </a>
+                            </div>
+                            <div class="col-md-6">
+                                <button class="btn btn-outline-primary w-100" id="refreshBtn">
+                                    <i class="fas fa-sync me-2"></i>Refresh Matches
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Recent Matches -->
+                <div class="card shadow-sm">
+                    <div class="card-body">
+                        <h5 class="card-title"><i class="fas fa-fire me-2"></i>Top Matches</h5>
+                        <hr>
+                        <div id="topMatches">
+                            <div class="text-center py-4">
+                                <div class="spinner-border text-primary" role="status"></div>
+                                <p class="mt-2">Loading matches...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="static/js/api.js"></script>
+    <script src="static/js/main.js"></script>
+    <script>
+        // Check authentication
+        checkAuth();
+
+        // Load user data
+        loadUserData();
+        loadTopMatches();
+
+        async function loadUserData() {
+            try {
+                const user = await apiRequest('/api/users/me');
+                document.getElementById('userName').textContent = user.name;
+                document.getElementById('userEmail').textContent = user.email;
+                
+                if (user.skills) {
+                    const skillsArray = user.skills.split(',').map(s => s.trim());
+                    document.getElementById('userSkills').innerHTML = skillsArray
+                        .map(skill => `<span class="badge bg-primary me-1">${skill}</span>`)
+                        .join('');
+                }
+
+                if (user.resume_file) {
+                    document.getElementById('resumeStatus').textContent = 'Uploaded';
+                    document.getElementById('resumeStatus').className = 'badge bg-success';
+                }
+            } catch (error) {
+                console.error('Error loading user data:', error);
+            }
+        }
+
+        async function loadTopMatches() {
+            try {
+                const matches = await apiRequest('/api/recommendations?limit=5');
+                const container = document.getElementById('topMatches');
+
+                if (matches.length === 0) {
+                    container.innerHTML = '<p class="text-muted">No matches found. Upload your resume to get personalized recommendations!</p>';
+                    return;
+                }
+
+                container.innerHTML = matches.map(match => `
+                    <div class="border-bottom pb-3 mb-3">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <h6 class="mb-1">${match.role}</h6>
+                                <p class="text-muted mb-1 small">${match.company_name}</p>
+                                <span class="badge bg-info">${match.opportunity_type}</span>
+                            </div>
+                            <div class="text-end">
+                                <div class="badge bg-success mb-2">${(match.similarity_score * 100).toFixed(1)}% Match</div>
+                                <br>
+                                <a href="${match.application_link}" target="_blank" class="btn btn-sm btn-primary">Apply</a>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                document.getElementById('topMatches').innerHTML = '<p class="text-danger">Error loading matches</p>';
+            }
+        }
+
+        // Refresh matches
+        document.getElementById('refreshBtn').addEventListener('click', async () => {
+            const btn = document.getElementById('refreshBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Refreshing...';
+
+            try {
+                await apiRequest('/api/recommendations/regenerate', 'POST');
+                await loadTopMatches();
+                alert('Matches refreshed successfully!');
+            } catch (error) {
+                alert('Error refreshing matches');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-sync me-2"></i>Refresh Matches';
+            }
+        });
+
+        // Logout
+        document.getElementById('logoutBtn').addEventListener('click', () => {
+            logout();
+        });
+    </script>
+</body>
+</html>
