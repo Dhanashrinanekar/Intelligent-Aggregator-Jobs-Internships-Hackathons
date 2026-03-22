@@ -127,6 +127,8 @@
                 formData.append('file', file);
 
                 const token = localStorage.getItem('token');
+                console.log('📤 Sending upload request...');
+                
                 const response = await fetch('/api/resume/upload-resume', {
                     method: 'POST',
                     headers: {
@@ -135,25 +137,61 @@
                     body: formData
                 });
 
-                const data = await response.json();
+                console.log('📥 Response received:', response.status, response.statusText);
+                
+                let data;
+                try {
+                    data = await response.json();
+                    console.log('📦 Response data:', data);
+                } catch (parseError) {
+                    console.error('❌ Error parsing JSON:', parseError);
+                    throw new Error('Invalid response format from server');
+                }
 
                 if (response.ok) {
+                    console.log('✅ Upload successful, showing results...');
                     processingInfo.style.display = 'none';
                     results.style.display = 'block';
                     
                     // Display extracted skills
-                    document.getElementById('extractedSkills').innerHTML = data.skills_extracted
-                        .map(skill => `<span class="badge bg-primary me-1 mb-1">${skill}</span>`)
-                        .join('');
+                    const skillsElement = document.getElementById('extractedSkills');
+                    if (skillsElement) {
+                        console.log('🎯 Setting skills:', data.skills_extracted);
+                        skillsElement.innerHTML = data.skills_extracted
+                            .map(skill => `<span class="badge bg-primary me-1 mb-1">${skill}</span>`)
+                            .join('');
+                    } else {
+                        console.error('❌ extractedSkills element not found!');
+                    }
                     
-                    document.getElementById('matchesCount').textContent = data.matches_found;
+                    const matchesElement = document.getElementById('matchesCount');
+                    if (matchesElement) {
+                        console.log('📊 Setting matches count:', data.matches_found);
+                        matchesElement.textContent = data.matches_found;
+                    } else {
+                        console.error('❌ matchesCount element not found!');
+                    }
+                    
+                    console.log('✅ Resume uploaded successfully:', data);
+                    
+                    // Redirect to upload-success page after 2 seconds
+                    setTimeout(() => {
+                        console.log('🔄 Redirecting to upload-success page...');
+                        window.location.href = '/upload-success';
+                    }, 2000);
                 } else {
                     processingInfo.style.display = 'none';
-                    showAlert(data.detail || 'Upload failed', 'danger');
+                    const errorMsg = data.detail || data.message || 'Upload failed';
+                    console.error('❌ Upload error:', response.status, errorMsg);
+                    showAlert(errorMsg, 'danger');
                 }
             } catch (error) {
                 processingInfo.style.display = 'none';
-                showAlert('Network error. Please try again.', 'danger');
+                console.error('❌ Network error details:', error);
+                console.error('Error type:', error.constructor.name);
+                console.error('Error message:', error.message);
+                console.error('Error stack:', error.stack);
+                showAlert(`Network error: ${error.message || 'Please check your connection and try again.'}`, 'danger');
             } finally {
                 uploadBtn.disabled = false;
                 uploadBtn.innerHTML = '<i class="fas fa-cloud-upload-alt me-2"></i>Upload & Process Resume';

@@ -7,6 +7,92 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="static/css/style.css">
+    <style>
+        .password-input-wrapper {
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+        
+        .password-input-wrapper .form-control {
+            padding-right: 40px;
+        }
+        
+        .password-toggle {
+            position: absolute;
+            right: 12px;
+            cursor: pointer;
+            color: #666;
+            font-size: 16px;
+            user-select: none;
+            transition: color 0.2s ease;
+        }
+        
+        .password-toggle:hover {
+            color: #0d6efd;
+        }
+        
+        .password-strength-meter {
+            height: 5px;
+            background-color: #e9ecef;
+            border-radius: 3px;
+            margin-top: 5px;
+            overflow: hidden;
+        }
+        
+        .password-strength-bar {
+            height: 100%;
+            width: 0%;
+            border-radius: 3px;
+            transition: width 0.3s ease, background-color 0.3s ease;
+        }
+        
+        .password-strength-text {
+            font-size: 12px;
+            margin-top: 3px;
+            font-weight: 600;
+        }
+        
+        .strength-weak {
+            color: #dc3545;
+        }
+        
+        .strength-fair {
+            color: #ffc107;
+        }
+        
+        .strength-good {
+            color: #0d6efd;
+        }
+        
+        .strength-strong {
+            color: #198754;
+        }
+        
+        .requirement-list {
+            font-size: 13px;
+            margin-top: 8px;
+        }
+        
+        .requirement-item {
+            margin: 4px 0;
+            display: flex;
+            align-items: center;
+        }
+        
+        .requirement-item i {
+            width: 20px;
+            margin-right: 5px;
+        }
+        
+        .requirement-item.completed i {
+            color: #198754;
+        }
+        
+        .requirement-item.incomplete i {
+            color: #dc3545;
+        }
+    </style>
 </head>
 <body class="bg-light">
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
@@ -39,13 +125,44 @@
 
                             <div class="mb-3">
                                 <label for="password" class="form-label">Password</label>
-                                <input type="password" class="form-control" id="password" required minlength="6">
-                                <small class="text-muted">Minimum 6 characters</small>
+                                <div class="password-input-wrapper">
+                                    <input type="password" class="form-control" id="password" required>
+                                    <i class="fas fa-eye password-toggle" id="passwordToggle"></i>
+                                </div>
+                                <div class="password-strength-meter">
+                                    <div class="password-strength-bar" id="strengthBar"></div>
+                                </div>
+                                <div class="password-strength-text" id="strengthText"></div>
+                                <div class="requirement-list">
+                                    <div class="requirement-item incomplete" id="req-uppercase">
+                                        <i class="fas fa-circle"></i>
+                                        <span>At least one uppercase letter (A-Z)</span>
+                                    </div>
+                                    <div class="requirement-item incomplete" id="req-lowercase">
+                                        <i class="fas fa-circle"></i>
+                                        <span>At least one lowercase letter (a-z)</span>
+                                    </div>
+                                    <div class="requirement-item incomplete" id="req-digit">
+                                        <i class="fas fa-circle"></i>
+                                        <span>At least one digit (0-9)</span>
+                                    </div>
+                                    <div class="requirement-item incomplete" id="req-special">
+                                        <i class="fas fa-circle"></i>
+                                        <span>At least one special character (!@#$%^&*)</span>
+                                    </div>
+                                    <div class="requirement-item incomplete" id="req-length">
+                                        <i class="fas fa-circle"></i>
+                                        <span>Minimum 8 characters</span>
+                                    </div>
+                                </div>
                             </div>
 
                             <div class="mb-3">
                                 <label for="confirmPassword" class="form-label">Confirm Password</label>
-                                <input type="password" class="form-control" id="confirmPassword" required>
+                                <div class="password-input-wrapper">
+                                    <input type="password" class="form-control" id="confirmPassword" required>
+                                    <i class="fas fa-eye password-toggle" id="confirmPasswordToggle"></i>
+                                </div>
                             </div>
 
                             <button type="submit" class="btn btn-primary w-100 py-2" id="submitBtn">
@@ -62,12 +179,138 @@
         </div>
     </div>
 
+    <!-- OTP Verification Modal -->
+    <div class="modal fade" id="otpModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Email Verification</h5>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted">We've sent a verification code to your email. Please enter it below:</p>
+                    <div id="otpAlertContainer"></div>
+                    <form id="otpForm">
+                        <div class="mb-3">
+                            <label for="otpInput" class="form-label">Verification Code</label>
+                            <input type="text" class="form-control form-control-lg text-center" id="otpInput" placeholder="Enter 6-digit code" maxlength="6" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100" id="otpSubmitBtn">Verify Code</button>
+                    </form>
+                    <hr>
+                    <button type="button" class="btn btn-link w-100" id="resendOtpBtn">Resend Code</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="static/js/api.js"></script>
     <script>
         const form = document.getElementById('registerForm');
         const alertContainer = document.getElementById('alert-container');
         const submitBtn = document.getElementById('submitBtn');
+        const passwordInput = document.getElementById('password');
+        const confirmPasswordInput = document.getElementById('confirmPassword');
+        const passwordToggle = document.getElementById('passwordToggle');
+        const confirmPasswordToggle = document.getElementById('confirmPasswordToggle');
+
+        // Password visibility toggle
+        passwordToggle.addEventListener('click', () => {
+            if (passwordInput.type === 'password') {
+                passwordInput.type = 'text';
+                passwordToggle.classList.remove('fa-eye');
+                passwordToggle.classList.add('fa-eye-slash');
+            } else {
+                passwordInput.type = 'password';
+                passwordToggle.classList.remove('fa-eye-slash');
+                passwordToggle.classList.add('fa-eye');
+            }
+        });
+
+        confirmPasswordToggle.addEventListener('click', () => {
+            if (confirmPasswordInput.type === 'password') {
+                confirmPasswordInput.type = 'text';
+                confirmPasswordToggle.classList.remove('fa-eye');
+                confirmPasswordToggle.classList.add('fa-eye-slash');
+            } else {
+                confirmPasswordInput.type = 'password';
+                confirmPasswordToggle.classList.remove('fa-eye-slash');
+                confirmPasswordToggle.classList.add('fa-eye');
+            }
+        });
+
+        // Password strength validation
+        passwordInput.addEventListener('input', () => {
+            const password = passwordInput.value;
+            checkPasswordStrength(password);
+        });
+
+        function checkPasswordStrength(password) {
+            const requirements = {
+                uppercase: /[A-Z]/.test(password),
+                lowercase: /[a-z]/.test(password),
+                digit: /[0-9]/.test(password),
+                special: /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password),
+                length: password.length >= 8
+            };
+
+            // Update requirement indicators
+            updateRequirement('uppercase', requirements.uppercase);
+            updateRequirement('lowercase', requirements.lowercase);
+            updateRequirement('digit', requirements.digit);
+            updateRequirement('special', requirements.special);
+            updateRequirement('length', requirements.length);
+
+            // Calculate strength
+            const metCount = Object.values(requirements).filter(Boolean).length;
+            let strength = 'weak';
+            let strengthColor = '#dc3545';
+            let strengthPercent = 0;
+
+            if (metCount <= 2) {
+                strength = 'Weak';
+                strengthColor = '#dc3545';
+                strengthPercent = 25;
+            } else if (metCount === 3) {
+                strength = 'Fair';
+                strengthColor = '#ffc107';
+                strengthPercent = 50;
+            } else if (metCount === 4) {
+                strength = 'Good';
+                strengthColor = '#0d6efd';
+                strengthPercent = 75;
+            } else if (metCount === 5) {
+                strength = 'Strong';
+                strengthColor = '#198754';
+                strengthPercent = 100;
+            }
+
+            // Update strength bar
+            const strengthBar = document.getElementById('strengthBar');
+            strengthBar.style.width = strengthPercent + '%';
+            strengthBar.style.backgroundColor = strengthColor;
+
+            // Update strength text
+            const strengthText = document.getElementById('strengthText');
+            strengthText.textContent = 'Password Strength: ' + strength;
+            strengthText.className = 'password-strength-text strength-' + strength.toLowerCase();
+        }
+
+        function updateRequirement(id, met) {
+            const element = document.getElementById('req-' + id);
+            if (met) {
+                element.classList.remove('incomplete');
+                element.classList.add('completed');
+                element.querySelector('i').className = 'fas fa-check-circle';
+            } else {
+                element.classList.remove('completed');
+                element.classList.add('incomplete');
+                element.querySelector('i').className = 'fas fa-circle';
+            }
+        }
+
+        // Store registration data for OTP verification
+        let registrationData = {};
 
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -83,28 +326,40 @@
                 return;
             }
 
+            // Validate password strength
+            const passReg = /^(?=.*[A-Z])(?=.*[a-z])(?=.*[0-9])(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?])(?=.{8,})/;
+            if (!passReg.test(password)) {
+                showAlert('Password must contain uppercase, lowercase, digit, special character, and be at least 8 characters', 'danger');
+                return;
+            }
+
+            // Store registration data
+            registrationData = { name, email, password };
+
             // Disable button
             submitBtn.disabled = true;
-            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Creating account...';
+            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Sending verification code...';
 
             try {
-                const response = await fetch('/api/users/register', {
+                // Send OTP to email
+                const response = await fetch('/api/users/send-otp', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({ name, email, password })
+                    body: JSON.stringify({ email })
                 });
 
-                const data = await response.json();
-
                 if (response.ok) {
-                    showAlert('Account created successfully! Redirecting to login...', 'success');
-                    setTimeout(() => {
-                        window.location.href = '/login';
-                    }, 2000);
+                    showAlert('Verification code sent to your email!', 'success');
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = '<i class="fas fa-user-plus me-2"></i>Create Account';
+                    // Show OTP modal
+                    const otpModal = new bootstrap.Modal(document.getElementById('otpModal'));
+                    otpModal.show();
                 } else {
-                    showAlert(data.detail || 'Registration failed', 'danger');
+                    const data = await response.json();
+                    showAlert(data.detail || 'Failed to send verification code', 'danger');
                     submitBtn.disabled = false;
                     submitBtn.innerHTML = '<i class="fas fa-user-plus me-2"></i>Create Account';
                 }
@@ -115,8 +370,96 @@
             }
         });
 
+        // OTP Verification
+        const otpForm = document.getElementById('otpForm');
+        const otpAlertContainer = document.getElementById('otpAlertContainer');
+        const otpSubmitBtn = document.getElementById('otpSubmitBtn');
+        const otpInput = document.getElementById('otpInput');
+
+        otpForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const otp = otpInput.value;
+
+            otpSubmitBtn.disabled = true;
+            otpSubmitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Verifying...';
+
+            try {
+                const response = await fetch('/api/users/verify-otp', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ 
+                        email: registrationData.email,
+                        otp,
+                        name: registrationData.name,
+                        password: registrationData.password
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showOtpAlert('Account created successfully! Redirecting to login...', 'success');
+                    setTimeout(() => {
+                        window.location.href = '/login';
+                    }, 2000);
+                } else {
+                    showOtpAlert(data.detail || 'Invalid OTP', 'danger');
+                    otpSubmitBtn.disabled = false;
+                    otpSubmitBtn.innerHTML = 'Verify Code';
+                }
+            } catch (error) {
+                showOtpAlert('Network error. Please try again.', 'danger');
+                otpSubmitBtn.disabled = false;
+                otpSubmitBtn.innerHTML = 'Verify Code';
+            }
+        });
+
+        // Resend OTP
+        document.getElementById('resendOtpBtn').addEventListener('click', async () => {
+            const resendBtn = document.getElementById('resendOtpBtn');
+            resendBtn.disabled = true;
+            resendBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Resending...';
+
+            try {
+                const response = await fetch('/api/users/send-otp', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ email: registrationData.email })
+                });
+
+                if (response.ok) {
+                    showOtpAlert('New verification code sent!', 'success');
+                    otpInput.value = '';
+                    resendBtn.disabled = false;
+                    resendBtn.innerHTML = 'Resend Code';
+                } else {
+                    showOtpAlert('Failed to resend OTP', 'danger');
+                    resendBtn.disabled = false;
+                    resendBtn.innerHTML = 'Resend Code';
+                }
+            } catch (error) {
+                showOtpAlert('Network error. Please try again.', 'danger');
+                resendBtn.disabled = false;
+                resendBtn.innerHTML = 'Resend Code';
+            }
+        });
+
         function showAlert(message, type) {
             alertContainer.innerHTML = `
+                <div class="alert alert-${type} alert-dismissible fade show" role="alert">
+                    ${message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            `;
+        }
+
+        function showOtpAlert(message, type) {
+            otpAlertContainer.innerHTML = `
                 <div class="alert alert-${type} alert-dismissible fade show" role="alert">
                     ${message}
                     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
