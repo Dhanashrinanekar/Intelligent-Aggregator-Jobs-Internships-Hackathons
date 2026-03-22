@@ -20,6 +20,7 @@ class User(Base):
     skills = Column(Text)  # Comma-separated
     resume_file = Column(String(500))  # File path
     resume_text = Column(Text)  # Extracted text
+    is_verified = Column(Boolean, default=False)  # Email verification status
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
@@ -27,6 +28,7 @@ class User(Base):
     resume_vector = relationship("ResumeVector", back_populates="user", uselist=False, cascade="all, delete-orphan")
     similarity_scores = relationship("SimilarityScore", back_populates="user", cascade="all, delete-orphan")
     email_notifications = relationship("EmailNotification", back_populates="user", cascade="all, delete-orphan")
+    otp_codes = relationship("OTPCode", back_populates="user", cascade="all, delete-orphan")
 
 
 class Opportunity(Base):
@@ -109,3 +111,19 @@ class EmailNotification(Base):
     # Relationships
     user = relationship("User", back_populates="email_notifications")
     job = relationship("Opportunity", back_populates="email_notifications")
+
+
+class OTPCode(Base):
+    """OTP Verification Code"""
+    __tablename__ = "otp_codes"
+    
+    otp_id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=True)
+    email = Column(String(255), nullable=False, index=True)
+    otp_code = Column(String(6), nullable=False)
+    is_used = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    
+    # Relationships
+    user = relationship("User", back_populates="otp_codes")

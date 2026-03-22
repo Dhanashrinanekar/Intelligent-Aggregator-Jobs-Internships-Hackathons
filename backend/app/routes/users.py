@@ -6,15 +6,110 @@ from datetime import timedelta
 
 from app.database import get_db
 from app.models import User
-from app.schemas import UserCreate, UserLogin, Token, UserResponse
+from app.schemas import UserCreate, UserLogin, Token, UserResponse, SendOTPRequest, VerifyOTPRequest, OTPResponse
 from app.auth.auth import get_password_hash, verify_password, create_access_token, get_current_user
 from app.config import settings
+from app.services.otp_service import OTPService
 
 router = APIRouter()
 
+@router.post("/send-otp", response_model=OTPResponse)
+async def send_otp(request: SendOTPRequest, db: Session = Depends(get_db)):
+    """Send OTP to user email for verification"""
+    email = request.email
+    
+    # Check if email already exists and is verified
+    existing_user = db.query(User).filter(User.email == email).first()
+    if existing_user and existing_user.is_verified:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already registered and verified"
+        )
+    
+    try:
+        # Generate and create OTP
+        otp = OTPService.create_otp(db, email)
+        
+        # Send OTP to email
+        success = OTPService.send_otp_email(email, otp)
+        
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to send OTP email"
+            )
+        
+        return OTPResponse(
+            message="OTP sent successfully to your email",
+            email=email
+        )
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error sending OTP: {str(e)}"
+        )
+
+@router.post("/verify-otp", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+async def verify_otp(request: VerifyOTPRequest, db: Session = Depends(get_db)):
+    """Verify OTP and complete user registration"""
+    email = request.email
+    otp = request.otp
+    
+    try:
+        # Verify OTP
+        is_valid = OTPService.verify_otp(db, email, otp)
+        
+        if not is_valid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired OTP"
+            )
+        
+        # Check if user exists
+        existing_user = db.query(User).filter(User.email == email).first()
+        
+        if existing_user:
+            # Update existing user
+            if request.password:
+                existing_user.password = get_password_hash(request.password)
+            existing_user.is_verified = True
+            db.commit()
+            db.refresh(existing_user)
+            return existing_user
+        else:
+            # Create new user
+            if not request.name or not request.password:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Name and password required for new user registration"
+                )
+            
+            hashed_password = get_password_hash(request.password)
+            new_user = User(
+                name=request.name,
+                email=email,
+                password=hashed_password,
+                is_verified=True
+            )
+            
+            db.add(new_user)
+            db.commit()
+            db.refresh(new_user)
+            
+            return new_user
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error verifying OTP: {str(e)}"
+        )
+
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register_user(user: UserCreate, db: Session = Depends(get_db)):
-    """Register new user"""
+    """Register new user (deprecated - use send-otp and verify-otp instead)"""
     # Check if email exists
     existing_user = db.query(User).filter(User.email == user.email).first()
     if existing_user:
@@ -28,7 +123,8 @@ async def register_user(user: UserCreate, db: Session = Depends(get_db)):
     new_user = User(
         name=user.name,
         email=user.email,
-        password=hashed_password
+        password=hashed_password,
+        is_verified=True
     )
    
 

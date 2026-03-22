@@ -1,16 +1,18 @@
-"""Resume Upload and Processing Routes"""
-from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
+"""Resume Upload and Processing Routes - Improved Error Handling"""
+from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.auth.auth import get_current_user
-from app.models import User, ResumeVector
+from app.models import User, Opportunity, SimilarityScore
 from app.services.resume_parser import ResumeParser
-from app.services.vectorizer import VectorizerService
-from app.services.matcher import MatcherService
 import os
-import shutil
 import json
+import traceback
 from datetime import datetime
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+import numpy as np
 
 router = APIRouter()
 
@@ -21,22 +23,36 @@ async def upload_resume(
     db: Session = Depends(get_db)
 ):
     """Upload and process resume"""
+    upload_error = None
+    
     try:
+        print("\n" + "="*70)
+        print("📁 RESUME UPLOAD STARTED")
+        print("="*70)
+        
         # Validate file type
         if not file.filename:
+            print("❌ No file provided")
             raise HTTPException(status_code=400, detail="No file selected")
         
-        if not file.filename.lower().endswith(('.pdf', '.docx')):
+        filename_lower = file.filename.lower()
+        if not (filename_lower.endswith('.pdf') or filename_lower.endswith('.docx')):
+            print(f"❌ Invalid file type: {filename_lower}")
             raise HTTPException(status_code=400, detail="Only PDF and DOCX files are allowed")
         
-        # Validate file size (5MB limit)
+        # Read file contents
+        print(f"📂 Reading file: {file.filename}")
         contents = await file.read()
         file_size = len(contents)
+        print(f"✅ File size: {file_size / 1024:.2f} KB")
         
-        if file_size > 5 * 1024 * 1024:  # 5MB
+        # Validate file size (5MB limit)
+        if file_size > 5 * 1024 * 1024:
+            print("❌ File too large")
             raise HTTPException(status_code=400, detail="File size exceeds 5MB limit")
         
         if file_size == 0:
+            print("❌ Empty file")
             raise HTTPException(status_code=400, detail="File is empty")
         
         # Create upload directory
@@ -48,107 +64,170 @@ async def upload_resume(
         safe_filename = f"user_{current_user.user_id}_{timestamp}_{file.filename}"
         file_path = os.path.join(upload_dir, safe_filename)
         
-        # Save file
+        # Save file to disk
+        print(f"💾 Saving to: {file_path}")
         with open(file_path, "wb") as buffer:
             buffer.write(contents)
-        
-        print(f"✅ File saved: {file_path}")
+        print("✅ File saved")
         
         # Extract text from resume
+        print("📖 Extracting text...")
         parser = ResumeParser()
-        try:
-            resume_text = parser.extract_text(file_path)
-            
-            if not resume_text or len(resume_text.strip()) < 50:
-                raise ValueError("Could not extract meaningful text from resume")
-            
-            print(f"✅ Text extracted: {len(resume_text)} characters")
-            
-        except Exception as e:
-            print(f"❌ Error extracting text: {e}")
-            # Clean up file
+        resume_text = parser.extract_text(file_path)
+        
+        if not resume_text or len(resume_text.strip()) < 50:
+            print("❌ Could not extract meaningful text")
             if os.path.exists(file_path):
                 os.remove(file_path)
-            raise HTTPException(
-                status_code=400, 
-                detail=f"Could not process resume file. Please ensure it's a valid PDF or DOCX. Error: {str(e)}"
-            )
+            raise HTTPException(status_code=400, detail="Could not extract text from resume. Please ensure it's a valid PDF or DOCX file.")
+        
+        print(f"✅ Text extracted: {len(resume_text)} characters")
         
         # Extract skills
+        print("🎯 Extracting skills...")
         skills = parser.extract_skills(resume_text)
-        print(f"✅ Skills extracted: {skills}")
+        print(f"✅ Skills found: {skills}")
         
         # Update user record
+        print("👤 Updating user record...")
         current_user.resume_file = file_path
         current_user.resume_text = resume_text
         current_user.skills = ", ".join(skills) if skills else None
+        db.commit()
+        print("✅ User record updated")
         
-        # Generate TF-IDF vector
-        try:
-            vectorizer = VectorizerService()
-            # Prepare text for vectorization
-            vector_text = resume_text
-            if skills:
-                vector_text += " " + " ".join(skills)
-            
-            # Fit and transform
-            vector = vectorizer.fit_transform_corpus([vector_text])[0]
-            print(f"✅ Vector generated: shape {vector.shape}")
-            
-            # Save/update vector in database
-            existing_vector = db.query(ResumeVector).filter(
-                ResumeVector.user_id == current_user.user_id
-            ).first()
-            
-            vector_json = json.dumps(vector.tolist())
-            
-            if existing_vector:
-                existing_vector.vector_data = vector_json
-                print("✅ Updated existing vector")
-            else:
-                resume_vector = ResumeVector(
-                    user_id=current_user.user_id,
-                    vector_data=vector_json
-                )
-                db.add(resume_vector)
-                print("✅ Created new vector")
-            
-            db.commit()
-            
-        except Exception as e:
-            print(f"❌ Error generating vector: {e}")
-            db.rollback()
-            raise HTTPException(
-                status_code=500,
-                detail=f"Error processing resume: {str(e)}"
-            )
-        
-        # Match with jobs
+        # Job matching
         matches_count = 0
+        print("🔍 Starting job matching...")
+        
         try:
-            matcher = MatcherService(db)
-            matches = matcher.match_user_with_jobs(current_user.user_id, threshold=0.75)
-            matches_count = len(matches)
-            print(f"✅ Found {matches_count} job matches")
-        except Exception as e:
-            print(f"⚠️  Warning: Could not generate matches: {e}")
-            # Don't fail the upload if matching fails
+            # Get all jobs from database
+            all_jobs = db.query(Opportunity).all()
+            print(f"📊 Total jobs in database: {len(all_jobs)}")
+            
+            if len(all_jobs) > 0:
+                print("🚀 Processing matches...")
+                
+                # Prepare texts for vectorization
+                resume_text_lower = resume_text.lower()
+                skills_text = " ".join(skills).lower() if skills else ""
+                resume_combined = resume_text_lower + " " + skills_text
+                
+                job_texts = []
+                for job in all_jobs:
+                    role = (job.role or "").lower()
+                    skills_req = (job.skills or "").lower()
+                    company = (job.company_name or "").lower()
+                    job_combined = f"{role} {skills_req} {company}"
+                    job_texts.append(job_combined)
+                
+                print(f"✅ Prepared {len(job_texts)} job descriptions")
+                
+                # Vectorize all texts together
+                all_texts = [resume_combined] + job_texts
+                print(f"🔢 Vectorizing {len(all_texts)} texts...")
+                
+                vectorizer = TfidfVectorizer(
+                    max_features=300,
+                    stop_words='english',
+                    ngram_range=(1, 2),
+                    min_df=1
+                )
+                
+                vectors = vectorizer.fit_transform(all_texts)
+                print(f"✅ Vectorizer output shape: {vectors.shape}")
+                
+                # Convert sparse matrix to dense
+                vectors_dense = vectors.toarray()
+                print(f"✅ Converted to dense: {vectors_dense.shape}")
+                
+                resume_vector = vectors_dense[0]
+                print(f"✅ Resume vector extracted: {resume_vector.shape}")
+                
+                # Calculate similarity for each job
+                print("⚙️  Calculating similarities...")
+                matches_list = []
+                for idx, job in enumerate(all_jobs):
+                    try:
+                        job_vector = vectors_dense[idx + 1]
+                        sim_result = cosine_similarity([resume_vector], [job_vector])
+                        similarity = float(sim_result[0][0])
+                        
+                        if similarity >= 0.25:
+                            matches_list.append({
+                                'job_id': job.id,
+                                'similarity': similarity
+                            })
+                            
+                            # Save to database
+                            existing = db.query(SimilarityScore).filter(
+                                SimilarityScore.user_id == current_user.user_id,
+                                SimilarityScore.job_id == job.id
+                            ).first()
+                            
+                            if existing:
+                                existing.similarity_score = similarity
+                            else:
+                                new_score = SimilarityScore(
+                                    user_id=current_user.user_id,
+                                    job_id=job.id,
+                                    similarity_score=similarity
+                                )
+                                db.add(new_score)
+                    except Exception as job_err:
+                        print(f"⚠️  Error processing job {idx}: {str(job_err)}")
+                        # Continue to next job
+                        continue
+                
+                db.commit()
+                matches_count = len(matches_list)
+                print(f"✅ Matching complete!")
+                print(f"✅ Found {matches_count} job matches")
+                
+            else:
+                print("ℹ️  No jobs in database yet")
+                
+        except Exception as matching_err:
+            print(f"⚠️  Error during matching phase: {str(matching_err)}")
+            traceback.print_exc()
+            # Don't stop upload if matching fails - it's not critical
             matches_count = 0
         
-        return {
-            "message": "Resume uploaded successfully",
+        # Build response
+        print(f"\n📊 FINAL RESULTS:")
+        print(f"   • Skills extracted: {len(skills)}")
+        print(f"   • Job matches found: {matches_count}")
+        print(f"   • Resume saved as: {safe_filename}")
+        
+        response_data = {
+            "message": "Resume uploaded and processed successfully!",
             "skills_extracted": skills if skills else [],
             "matches_found": matches_count,
             "resume_file": safe_filename
         }
         
-    except HTTPException:
+        print("\n✅ UPLOAD SUCCESSFUL")
+        print("="*70 + "\n")
+        
+        return response_data
+        
+    except HTTPException as http_err:
+        print(f"\n❌ HTTP Error: {http_err.detail}")
+        print("="*70 + "\n")
         raise
+        
     except Exception as e:
-        print(f"❌ Unexpected error in upload_resume: {e}")
-        import traceback
+        error_msg = str(e)
+        print(f"\n❌ UPLOAD FAILED - Unexpected error: {error_msg}")
+        print(f"Error type: {type(e).__name__}")
         traceback.print_exc()
-        raise HTTPException(
+        print("="*70 + "\n")
+        
+        # Return JSON error response
+        return JSONResponse(
             status_code=500,
-            detail=f"Unexpected error: {str(e)}"
+            content={
+                "detail": f"Error processing resume: {error_msg}",
+                "error_type": type(e).__name__
+            }
         )

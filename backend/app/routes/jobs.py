@@ -22,6 +22,7 @@ async def search_jobs(
 ):
     """
     Search jobs with filters - PUBLIC endpoint (no authentication required)
+    Only returns active jobs (not expired)
     
     Query Parameters:
     - keyword: Search in role, skills, or company name
@@ -32,6 +33,13 @@ async def search_jobs(
     """
     try:
         query = db.query(Opportunity)
+        
+        # Filter out expired jobs - only show jobs where end date is in future or null
+        now = datetime.now()
+        query = query.filter(
+            (Opportunity.application_end_date > now) | 
+            (Opportunity.application_end_date == None)
+        )
         
         # Apply filters
         if keyword:
@@ -100,17 +108,24 @@ async def get_job_details(
 ):
     """
     Get single job details by ID - PUBLIC endpoint
+    Returns error if job is expired
     
     Parameters:
     - job_id: The ID of the job to retrieve
     """
     try:
-        job = db.query(Opportunity).filter(Opportunity.id == job_id).first()
+        # Check if job is not expired
+        now = datetime.now()
+        job = db.query(Opportunity).filter(
+            Opportunity.id == job_id,
+            (Opportunity.application_end_date > now) | 
+            (Opportunity.application_end_date == None)
+        ).first()
         
         if not job:
             raise HTTPException(
                 status_code=404,
-                detail=f"Job with ID {job_id} not found"
+                detail=f"Job with ID {job_id} not found or has expired"
             )
         
         return job
@@ -128,12 +143,17 @@ async def get_job_details(
 @router.get("/portals/list")
 async def get_portals(db: Session = Depends(get_db)):
     """
-    Get list of all job portals - PUBLIC endpoint
+    Get list of all active job portals - PUBLIC endpoint
+    Only returns portals that have non-expired jobs
     
     Returns list of unique portal names from database
     """
     try:
-        portals = db.query(Opportunity.job_portal_name).distinct().all()
+        now = datetime.now()
+        portals = db.query(Opportunity.job_portal_name).filter(
+            (Opportunity.application_end_date > now) | 
+            (Opportunity.application_end_date == None)
+        ).distinct().all()
         portal_list = [p[0] for p in portals if p[0]]
         
         return {
@@ -153,15 +173,24 @@ async def get_portals(db: Session = Depends(get_db)):
 async def get_job_stats(db: Session = Depends(get_db)):
     """
     Get job statistics - PUBLIC endpoint
+    Only counts active (non-expired) jobs
     
     Returns statistics about available jobs
     """
     try:
+        now = datetime.now()
+        
+        # Build base query for active jobs only
+        base_query = db.query(Opportunity).filter(
+            (Opportunity.application_end_date > now) | 
+            (Opportunity.application_end_date == None)
+        )
+        
         # Total jobs
-        total_jobs = db.query(Opportunity).count()
+        total_jobs = base_query.count()
         
         # Jobs by type
-        job_types = db.query(
+        job_types = base_query.with_entities(
             Opportunity.opportunity_type,
             db.func.count(Opportunity.id)
         ).group_by(Opportunity.opportunity_type).all()
@@ -169,7 +198,7 @@ async def get_job_stats(db: Session = Depends(get_db)):
         types_dict = {job_type: count for job_type, count in job_types if job_type}
         
         # Jobs by portal
-        portals = db.query(
+        portals = base_query.with_entities(
             Opportunity.job_portal_name,
             db.func.count(Opportunity.id)
         ).group_by(Opportunity.job_portal_name).all()

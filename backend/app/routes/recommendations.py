@@ -2,6 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List
+from datetime import datetime
 
 from app.database import get_db
 from app.models import User, SimilarityScore, Opportunity
@@ -16,7 +17,7 @@ async def get_recommendations(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Get personalized job recommendations"""
+    """Get personalized job recommendations (only active, non-expired jobs)"""
     try:
         # Check if user has uploaded resume
         if not current_user.resume_text:
@@ -26,14 +27,21 @@ async def get_recommendations(
                 "total": 0
             }
         
-        # Get recommendations from database
+        # Filter out expired jobs
+        now = datetime.now()
+        
+        # Get recommendations from database (threshold 0.25 for initial matches)
+        # Only include jobs that haven't expired
         recommendations = db.query(
             SimilarityScore, Opportunity
         ).join(
             Opportunity, SimilarityScore.job_id == Opportunity.id
         ).filter(
             SimilarityScore.user_id == current_user.user_id,
-            SimilarityScore.similarity_score >= 0.75
+            SimilarityScore.similarity_score >= 0.25,
+            # Filter out expired jobs
+            (Opportunity.application_end_date > now) | 
+            (Opportunity.application_end_date == None)
         ).order_by(
             SimilarityScore.similarity_score.desc()
         ).limit(limit).all()
@@ -47,12 +55,18 @@ async def get_recommendations(
                 "role": job.role or "Not specified",
                 "opportunity_type": job.opportunity_type or "job",
                 "skills": job.skills or "Not specified",
+                "experience_required": job.experience_required or "Not specified",
                 "similarity_score": float(score.similarity_score),
                 "rank_position": score.rank_position or 0,
-                "application_link": job.application_link or "#"
+                "application_link": job.application_link or "#",
+                "job_portal_name": job.job_portal_name or "Not specified"
             })
         
-        return result
+        return {
+            "recommendations": result,
+            "total": len(result),
+            "message": f"Found {len(result)} active job matches for you"
+        }
         
     except Exception as e:
         print(f"❌ Error in get_recommendations: {e}")

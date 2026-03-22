@@ -41,7 +41,7 @@ if frontend_path.exists():
     app.mount("/static", StaticFiles(directory=str(frontend_path / "static")), name="static")
     app.mount("/assets", StaticFiles(directory=str(frontend_path / "assets")), name="assets")
 
-# Include routers
+# Include routerscd
 app.include_router(users.router, prefix="/api/users", tags=["Users"])
 app.include_router(jobs.router, prefix="/api/jobs", tags=["Jobs"])
 app.include_router(resume.router, prefix="/api/resume", tags=["Resume"])
@@ -80,6 +80,10 @@ async def jobs_page():
 async def recommendations_page():
     return FileResponse(frontend_path / "recommendations.html")
 
+@app.get("/upload-success", response_class=HTMLResponse)
+async def upload_success_page():
+    return FileResponse(frontend_path / "upload-success.html")
+
 # Health check
 @app.get("/api/health")
 async def health_check():
@@ -92,6 +96,29 @@ async def startup_event():
     start_scheduler()
     print("✅ Application started successfully")
 
+# Test email endpoint
+from fastapi import Depends
+from sqlalchemy.orm import Session
+from app.database import get_db
+
+@app.get("/api/test-email")
+async def test_email(db: Session = Depends(get_db)):
+    from app.services.email_service import EmailService
+    email_service = EmailService()
+    
+    print(f"SMTP Server: {email_service.smtp_server}")
+    print(f"SMTP Port:   {email_service.smtp_port}")
+    print(f"From Email:  {email_service.sender_email}")
+    print(f"Password set: {bool(email_service.sender_password)}")
+    
+    email_service.send_job_match_notification(db)
+    
+    return {
+        "smtp_server": email_service.smtp_server,
+        "smtp_port": email_service.smtp_port,
+        "sender_email": email_service.sender_email,
+        "password_loaded": bool(email_service.sender_password)
+    }
 # Main entry point
 if __name__ == "__main__":
     import uvicorn

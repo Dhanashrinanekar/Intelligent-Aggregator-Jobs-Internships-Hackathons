@@ -73,3 +73,17 @@ class ResumeUploadResponse(BaseModel):
     message: str
     skills_extracted: List[str]
     matches_found: int
+
+# ============ OTP Schemas ============
+class SendOTPRequest(BaseModel):
+    email: EmailStr
+
+class VerifyOTPRequest(BaseModel):
+    email: EmailStr
+    otp: str
+    name: Optional[str] = None
+    password: Optional[str] = None
+
+class OTPResponse(BaseModel):
+    message: str
+    email: str

@@ -40,7 +40,7 @@ class EmailService:
         """Send notifications for new high-scoring matches"""
         # Get matches above threshold that haven't been emailed
         pending = db.query(SimilarityScore).filter(
-            SimilarityScore.similarity_score >= 0.75,
+            SimilarityScore.similarity_score >= 0.3,
             SimilarityScore.email_sent == False
         ).all()
         
