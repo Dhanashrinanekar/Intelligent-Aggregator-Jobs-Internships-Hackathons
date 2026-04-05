@@ -87,3 +87,11 @@ class VerifyOTPRequest(BaseModel):
 class OTPResponse(BaseModel):
     message: str
     email: str
+
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+class PasswordResetConfirm(BaseModel):
+    email: EmailStr
+    otp: str
+    new_password: str

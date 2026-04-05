@@ -55,7 +55,31 @@ class OTPService:
         </html>
         """
         return email_service.send_email(email, subject, body)
-    
+
+    @staticmethod
+    def send_password_reset_email(email: str, otp: str) -> bool:
+        """Send password reset instructions with OTP"""
+        email_service = EmailService()
+        subject = "AI Job Aggregator Password Reset"
+        reset_link = f"http://localhost:8000/reset-password?email={email}&otp={otp}"
+        body = f"""
+        <html>
+            <body style=\"font-family: Arial, sans-serif;\">
+                <div style=\"max-width: 500px; margin: 0 auto; padding: 20px; background-color: #f8f9fa; border-radius: 8px;\">
+                    <h2 style=\"color: #dc3545; text-align: center;\">Password Reset Request</h2>
+                    <p style=\"color: #333; font-size: 16px;\">You requested to reset your password. Use the code below or click the link to choose a new password:</p>
+                    <div style=\"background-color: white; padding: 15px; border-radius: 8px; margin: 20px 0; border: 1px solid #ced4da; text-align: center;\">
+                        <strong style=\"font-size: 18px;\">{otp}</strong>
+                    </div>
+                    <p style=\"color: #333; font-size: 14px;\">Reset link: <a href=\"{reset_link}\">Reset my password</a></p>
+                    <p style=\"color: #999; font-size: 12px;\">This code is valid for 10 minutes. If you did not request this, ignore this email.</p>
+                    <p style=\"color: #999; font-size: 12px;\">© 2024 AI Job Aggregator</p>
+                </div>
+            </body>
+        </html>
+        """
+        return email_service.send_email(email, subject, body)
+
     @staticmethod
     def create_otp(db: Session, email: str, user_id: int = None) -> str:
         """Create and save OTP to database"""

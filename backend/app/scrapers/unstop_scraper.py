@@ -16,10 +16,10 @@ import os
 # Import database module
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-try:
-    from database import JobDatabase
-except ImportError:
-    from database.db_operations import JobDatabase
+# try:
+#     from database import JobDatabase
+# except ImportError:
+#     from database.db_operations import JobDatabase  # Import only when needed
 
 
 def scrape_unstop(keyword="python", category="jobs", num_pages=1, save_to_db=True):
@@ -248,6 +248,10 @@ def scrape_unstop(keyword="python", category="jobs", num_pages=1, save_to_db=Tru
     if save_to_db and opportunities:
         print("💾 Saving to database...")
         try:
+            try:
+                from database import JobDatabase
+            except ImportError:
+                from database.db_operations import JobDatabase
             db = JobDatabase()
             inserted = db.insert_jobs_bulk(opportunities)
             db.close()

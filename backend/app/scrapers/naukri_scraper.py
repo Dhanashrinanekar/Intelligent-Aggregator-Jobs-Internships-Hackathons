@@ -14,7 +14,7 @@ import os
 
 # Add parent directory to path to import database module
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from database.db_operations import JobDatabase
+# from database.db_operations import JobDatabase  # Import only when needed
 
 
 def scrape_naukri(keyword="python developer", location="", num_pages=1, save_to_db=True):
@@ -226,6 +226,7 @@ def scrape_naukri(keyword="python developer", location="", num_pages=1, save_to_
     if save_to_db and jobs:
         print("💾 Saving to database...")
         try:
+            from database.db_operations import JobDatabase
             db = JobDatabase()
             inserted = db.insert_jobs_bulk(jobs)
             db.close()

@@ -6,7 +6,7 @@ from datetime import timedelta
 
 from app.database import get_db
 from app.models import User
-from app.schemas import UserCreate, UserLogin, Token, UserResponse, SendOTPRequest, VerifyOTPRequest, OTPResponse
+from app.schemas import UserCreate, UserLogin, Token, UserResponse, SendOTPRequest, VerifyOTPRequest, OTPResponse, PasswordResetRequest, PasswordResetConfirm
 from app.auth.auth import get_password_hash, verify_password, create_access_token, get_current_user
 from app.config import settings
 from app.services.otp_service import OTPService
@@ -106,6 +106,52 @@ async def verify_otp(request: VerifyOTPRequest, db: Session = Depends(get_db)):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error verifying OTP: {str(e)}"
         )
+
+@router.post("/password-reset/request", response_model=OTPResponse)
+async def request_password_reset(request: PasswordResetRequest, db: Session = Depends(get_db)):
+    """Send password reset OTP by email"""
+    user = db.query(User).filter(User.email == request.email).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User with this email does not exist"
+        )
+
+    otp = OTPService.create_otp(db, user.email, user.user_id)
+    sent = OTPService.send_password_reset_email(user.email, otp)
+
+    if not sent:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to send password reset email"
+        )
+
+    return OTPResponse(
+        message="Password reset link has been sent to your email.",
+        email=user.email
+    )
+
+@router.post("/password-reset/confirm")
+async def confirm_password_reset(request: PasswordResetConfirm, db: Session = Depends(get_db)):
+    """Verify OTP and reset password"""
+    user = db.query(User).filter(User.email == request.email).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User with this email not found"
+        )
+
+    is_valid = OTPService.verify_otp(db, request.email, request.otp)
+    if not is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset code"
+        )
+
+    user.password = get_password_hash(request.new_password)
+    db.commit()
+
+    return {"message": "Password has been reset successfully"}
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register_user(user: UserCreate, db: Session = Depends(get_db)):

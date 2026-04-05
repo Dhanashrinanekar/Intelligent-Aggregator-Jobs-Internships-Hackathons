@@ -64,6 +64,14 @@ async def register_page():
 async def login_page():
     return FileResponse(frontend_path / "login.html")
 
+@app.get("/forgot-password", response_class=HTMLResponse)
+async def forgot_password_page():
+    return FileResponse(frontend_path / "forgot-password.html")
+
+@app.get("/reset-password", response_class=HTMLResponse)
+async def reset_password_page():
+    return FileResponse(frontend_path / "reset-password.html")
+
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard_page():
     return FileResponse(frontend_path / "dashboard.html")
