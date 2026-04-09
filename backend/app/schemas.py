@@ -19,6 +19,7 @@ class UserResponse(BaseModel):
     name: str
     email: str
     skills: Optional[str] = None
+    resume_file: Optional[str] = None
     created_at: datetime
     
     class Config:

@@ -5,8 +5,9 @@ from sqlalchemy import or_
 from typing import Optional
 from datetime import datetime
 
+from app.auth.auth import get_current_user_optional
 from app.database import get_db
-from app.models import Opportunity
+from app.models import Opportunity, SimilarityScore, User
 from app.schemas import JobResponse
 
 router = APIRouter()
@@ -18,7 +19,8 @@ async def search_jobs(
     portal: Optional[str] = None,
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
 ):
     """
     Search jobs with filters - PUBLIC endpoint (no authentication required)
@@ -61,9 +63,22 @@ async def search_jobs(
         # Get total count before pagination
         total = query.count()
         
+        # Apply optional similarity ordering if the user is authenticated
+        if current_user:
+            query = query.outerjoin(
+                SimilarityScore,
+                (SimilarityScore.job_id == Opportunity.id) &
+                (SimilarityScore.user_id == current_user.user_id)
+            ).order_by(
+                SimilarityScore.similarity_score.desc().nullslast(),
+                Opportunity.created_at.desc()
+            )
+        else:
+            query = query.order_by(Opportunity.created_at.desc())
+
         # Apply pagination
         offset = (page - 1) * limit
-        jobs = query.order_by(Opportunity.created_at.desc()).offset(offset).limit(limit).all()
+        jobs = query.offset(offset).limit(limit).all()
         
         # Convert to response format
         jobs_data = []

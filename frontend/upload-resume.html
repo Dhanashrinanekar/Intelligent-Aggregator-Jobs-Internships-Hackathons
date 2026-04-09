@@ -37,6 +37,7 @@
                         <p class="text-center text-muted mb-4">Upload your resume to get AI-powered job recommendations</p>
 
                         <div id="alert-container"></div>
+                        <div id="existingResumeContainer" class="mb-4"></div>
 
                         <form id="uploadForm">
                             <div class="mb-4">
@@ -91,6 +92,9 @@
         const processingInfo = document.getElementById('processingInfo');
         const results = document.getElementById('results');
         const alertContainer = document.getElementById('alert-container');
+        const existingResumeContainer = document.getElementById('existingResumeContainer');
+
+        loadExistingResume();
 
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -205,6 +209,35 @@
                     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                 </div>
             `;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text || '';
+            return div.innerHTML;
+        }
+
+        async function loadExistingResume() {
+            try {
+                const user = await apiRequest('/api/users/me');
+                if (user.resume_file) {
+                    const filename = user.resume_file.split('/').pop().split('\\').pop();
+                    existingResumeContainer.innerHTML = `
+                        <div class="alert alert-success">
+                            <h6 class="mb-2"><i class="fas fa-check-circle me-1"></i>Resume already uploaded</h6>
+                            <p class="mb-2">Current file: <strong>${escapeHtml(filename)}</strong></p>
+                            <div class="d-flex gap-2 flex-wrap">
+                                <a href="/api/resume/download" target="_blank" class="btn btn-outline-primary btn-sm">
+                                    <i class="fas fa-download me-1"></i>Download Existing Resume
+                                </a>
+                                <span class="text-muted align-self-center">Upload a new file to replace it.</span>
+                            </div>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Error loading resume info:', error);
+            }
         }
 
         document.getElementById('logoutBtn').addEventListener('click', logout);

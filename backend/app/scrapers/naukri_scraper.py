@@ -12,8 +12,33 @@ from datetime import datetime
 import sys
 import os
 
-# Add parent directory to path to import database module
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Ensure repo root is on sys.path so root-level packages resolve correctly
+_repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+if _repo_root not in sys.path:
+    sys.path.insert(0, _repo_root)
+
+from backend.app.utils.date_utils import resolve_dates_for_job
+
+
+def _clean_skill_tags(tags):
+    """Return only actual skills, filtering out salary/role/type metadata."""
+    irrelevant = [
+        '₹', 'rs', 'per', 'month', 'year', 'annum', 'lpa', 'full-time',
+        'part-time', 'contract', 'temporary', 'internship', 'freelance',
+        'hours', 'experience', 'location', 'salary', 'salary:', 'apply',
+        'hiring', 'posted', 'ago', 'company', 'role'
+    ]
+    cleaned = []
+    for tag in tags:
+        text = tag.strip()
+        if not text:
+            continue
+        lower = text.lower()
+        if any(keyword in lower for keyword in irrelevant):
+            continue
+        cleaned.append(text)
+    return cleaned
+
 # from database.db_operations import JobDatabase  # Import only when needed
 
 
@@ -148,12 +173,14 @@ def scrape_naukri(keyword="python developer", location="", num_pages=1, save_to_
                 try:
                     skills_container = card.find_element(By.CLASS_NAME, "tags-gt")
                     skill_elems = skills_container.find_elements(By.TAG_NAME, "li")
-                    skills_list = [skill.text.strip() for skill in skill_elems if skill.text.strip()]
+                    raw_skills = [skill.text.strip() for skill in skill_elems if skill.text.strip()]
+                    skills_list = _clean_skill_tags(raw_skills)
                 except:
                     # Try alternative selector
                     try:
                         skill_elems = card.find_elements(By.CSS_SELECTOR, "ul.tags li")
-                        skills_list = [skill.text.strip() for skill in skill_elems if skill.text.strip()]
+                        raw_skills = [skill.text.strip() for skill in skill_elems if skill.text.strip()]
+                        skills_list = _clean_skill_tags(raw_skills)
                     except:
                         pass
                 
@@ -185,7 +212,7 @@ def scrape_naukri(keyword="python developer", location="", num_pages=1, save_to_
                 job_data = {
                     "company_name": company,
                     "role": role,
-                    "opportunity_type": "Full-time",  # Naukri doesn't specify, default to Full-time
+                    "opportunity_type": "",
                     "application_start_date": None,
                     "application_end_date": None,
                     "skills": ", ".join(skills_list) if skills_list else "N/A",
@@ -200,6 +227,9 @@ def scrape_naukri(keyword="python developer", location="", num_pages=1, save_to_
                     "posted_date": posted_date,
                     "scraped_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 }
+                
+                # Resolve dates to ensure no NULL values
+                resolve_dates_for_job(job_data)
                 
                 jobs.append(job_data)
                 print(f"  ✓ [{idx}/{len(job_cards)}] {role} at {company}")

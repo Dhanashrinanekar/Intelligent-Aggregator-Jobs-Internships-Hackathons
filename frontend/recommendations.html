@@ -92,7 +92,10 @@
                 const matchPercent = (rec.similarity_score * 100).toFixed(1);
                 const matchClass = matchPercent >= 90 ? 'success' : matchPercent >= 80 ? 'primary' : matchPercent >= 50 ? 'info' : 'warning';
 
-                return `
+                const showSkills = rec.skills && rec.skills !== 'Not specified' && rec.skills.toLowerCase() !== 'null';
+            const showExperience = rec.experience_required && rec.experience_required !== 'Not specified' && rec.experience_required.toLowerCase() !== 'null';
+
+            return `
                     <div class="card mb-3 shadow-sm recommendation-card">
                         <div class="card-body">
                             <div class="row">
@@ -108,12 +111,16 @@
                                         <span class="badge bg-primary me-2">${rec.opportunity_type}</span>
                                         <span class="badge bg-${matchClass}">${matchPercent}% Match</span>
                                     </p>
-                                    <p class="small text-muted mb-1">
-                                        <strong>Required Skills:</strong> ${rec.skills || 'Not specified'}
-                                    </p>
-                                    <p class="small text-muted mb-0">
-                                        <strong>Experience:</strong> ${rec.experience_required || 'Not specified'}
-                                    </p>
+                                    ${showSkills ? `
+                                        <p class="small text-muted mb-1">
+                                            <strong>Required Skills:</strong> ${rec.skills}
+                                        </p>
+                                    ` : ''}
+                                    ${showExperience ? `
+                                        <p class="small text-muted mb-0">
+                                            <strong>Experience:</strong> ${rec.experience_required}
+                                        </p>
+                                    ` : ''}
                                 </div>
                                 <div class="col-md-3 text-end d-flex flex-column justify-content-center">
                                     <div class="mb-3">

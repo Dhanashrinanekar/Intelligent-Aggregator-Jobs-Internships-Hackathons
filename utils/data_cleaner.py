@@ -1,5 +1,5 @@
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 import pandas as pd
 
 def clean_company_name(name):
@@ -59,24 +59,59 @@ def parse_date(date_str):
     """Try to parse date from various formats"""
     if not date_str or date_str == "N/A":
         return None
-    
+    if isinstance(date_str, datetime):
+        return date_str
+    if not isinstance(date_str, str):
+        return None
+
+    date_str = date_str.strip()
+    lowered = date_str.lower()
+
+    # Handle relative dates
+    if 'today' in lowered or 'just posted' in lowered:
+        return datetime.utcnow()
+    if 'yesterday' in lowered:
+        return datetime.utcnow() - timedelta(days=1)
+
+    ago_match = re.search(r'(\d+)\+?\s*(day|days|hour|hours|week|weeks|month|months)\s+ago', lowered)
+    if ago_match:
+        count = int(ago_match.group(1))
+        unit = ago_match.group(2)
+        if 'hour' in unit:
+            return datetime.utcnow() - timedelta(hours=count)
+        if 'day' in unit:
+            return datetime.utcnow() - timedelta(days=count)
+        if 'week' in unit:
+            return datetime.utcnow() - timedelta(weeks=count)
+        if 'month' in unit:
+            return datetime.utcnow() - timedelta(days=30 * count)
+
     # Common date formats
     formats = [
         '%Y-%m-%d',
+        '%Y-%m-%dT%H:%M:%S%z',
+        '%Y-%m-%dT%H:%M:%S',
+        '%Y-%m-%dT%H:%M:%SZ',
         '%d-%m-%Y',
         '%m/%d/%Y',
         '%d/%m/%Y',
         '%B %d, %Y',
         '%d %B %Y'
     ]
-    
+
     for fmt in formats:
         try:
             return datetime.strptime(date_str, fmt)
         except ValueError:
             continue
-    
-    return None
+
+    # Try ISO format fallback
+    try:
+        if date_str.endswith('Z'):
+            return datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+        return datetime.fromisoformat(date_str)
+    except ValueError:
+        return None
 
 
 def clean_url(url):
@@ -107,12 +142,30 @@ def clean_opportunity_data(data_list):
     
     for data in data_list:
         try:
+            posted_date = parse_date(
+                data.get('posted_date') or data.get('postedDate') or data.get('date_posted')
+            )
+            application_start = parse_date(data.get('application_start_date'))
+            application_end = (
+                parse_date(data.get('application_end_date'))
+                or parse_date(data.get('validThrough'))
+                or parse_date(data.get('deadline'))
+                or parse_date(data.get('deadline_str'))
+            )
+
+            if not application_start:
+                application_start = posted_date or datetime.utcnow()
+
+            if not application_end:
+                base_date = posted_date or application_start
+                application_end = base_date + timedelta(days=20)
+
             cleaned = {
                 'company_name': clean_company_name(data.get('company_name')),
                 'role': clean_role(data.get('role')),
                 'opportunity_type': data.get('opportunity_type', 'job').lower(),
-                'application_start_date': parse_date(data.get('application_start_date')),
-                'application_end_date': parse_date(data.get('application_end_date')),
+                'application_start_date': application_start,
+                'application_end_date': application_end,
                 'skills': clean_skills(data.get('skills')),
                 'experience_required': clean_experience(data.get('experience_required')),
                 'job_portal_name': data.get('job_portal_name', 'Unknown'),

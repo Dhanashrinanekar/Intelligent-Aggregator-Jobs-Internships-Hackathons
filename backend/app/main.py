@@ -9,6 +9,10 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, FileResponse
 from pathlib import Path
 import os
+from dotenv import load_dotenv
+
+# Load environment variables from backend/.env before scheduler startup
+load_dotenv(dotenv_path=Path(__file__).resolve().parents[1] / '.env')
 
 from app.database import Base, engine
 from app.routes import users, jobs, resume, recommendations

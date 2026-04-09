@@ -352,5 +352,24 @@
     </footer>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="static/js/api.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            if (!isAuthenticated()) {
+                return;
+            }
+            const navList = document.querySelector('.navbar-nav');
+            if (!navList) return;
+            navList.innerHTML = `
+                <li class="nav-item"><a class="nav-link" href="/">Home</a></li>
+                <li class="nav-item"><a class="nav-link" href="/dashboard">Dashboard</a></li>
+                <li class="nav-item"><a class="nav-link" href="/jobs">Browse Jobs</a></li>
+                <li class="nav-item"><a class="nav-link" href="/upload-resume">Upload Resume</a></li>
+                <li class="nav-item"><a class="nav-link" href="#" id="logoutBtn">Logout</a></li>
+            `;
+            const logoutBtn = document.getElementById('logoutBtn');
+            if (logoutBtn) logoutBtn.addEventListener('click', logout);
+        });
+    </script>
 </body>
 </html>

@@ -1,9 +1,10 @@
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from database.models import get_db_session, Opportunity
-from scrapers.naukri_scraper import scrape_naukri
-from scrapers.indeed_api import scrape_indeed_simple
-#from scrapers.linkedin_scraper import scrape_linkedin_jobs
+from backend.app.scrapers.naukri_scraper import scrape_naukri
+from backend.app.scrapers.indeed_api import scrape_indeed_simple
+from backend.app.utils.date_utils import resolve_dates_for_job
+#from backend.app.scrapers.linkedin_scraper import scrape_linkedin_jobs
 from utils.data_cleaner import clean_opportunity_data
 from utils.deduplicator import remove_duplicates
 from sqlalchemy.exc import IntegrityError
@@ -25,7 +26,7 @@ def fetch_all_opportunities(keywords=None):
     try:
         for keyword in keywords:
             print(f"\n📍 Fetching from Naukri for: {keyword}")
-            naukri_jobs = scrape_naukri(keyword, num_pages=2)
+            naukri_jobs = scrape_naukri(keyword, num_pages=2, save_to_db=False)
             all_opportunities.extend(naukri_jobs)
     except Exception as e:
         print(f"❌ Naukri scraping failed: {e}")
@@ -77,6 +78,14 @@ def process_and_store_opportunities(opportunities):
     skipped_count = 0
     
     for opp in unique_opportunities:
+        # Resolve dates to ensure no NULL values
+        resolve_dates_for_job(opp)
+        # Safety net: if still None, set defaults
+        if opp.get('application_start_date') is None:
+            opp['application_start_date'] = datetime.utcnow()
+        if opp.get('application_end_date') is None:
+            opp['application_end_date'] = datetime.utcnow() + timedelta(days=20)
+        
         try:
             # Check if opportunity already exists
             existing = session.query(Opportunity).filter_by(
@@ -118,6 +127,26 @@ def process_and_store_opportunities(opportunities):
         session.close()
     
     return new_count, updated_count
+
+
+def cleanup_expired_opportunities():
+    """Delete expired opportunities from the database before adding new data."""
+    session = get_db_session()
+    try:
+        now = datetime.utcnow()
+        deleted = session.query(Opportunity).filter(
+            Opportunity.application_end_date < now
+        ).delete(synchronize_session=False)
+        session.commit()
+        if deleted:
+            print(f"✅ Deleted {deleted} expired job(s) from database")
+        return deleted
+    except Exception as e:
+        session.rollback()
+        print(f"❌ Error cleaning up expired jobs: {e}")
+        return 0
+    finally:
+        session.close()
 
 
 def display_summary():
@@ -184,6 +213,9 @@ def main():
             "machine learning engineer"
         ]
         
+        # Step 0: Remove expired job records first
+        cleanup_expired_opportunities()
+
         # Step 1: Fetch opportunities
         opportunities = fetch_all_opportunities(keywords)
         

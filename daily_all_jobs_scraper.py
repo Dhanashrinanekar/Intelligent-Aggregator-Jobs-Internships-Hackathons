@@ -16,9 +16,9 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'scrapers'))
 
 # Import all scrapers
-from scrapers.indeed_scraper import scrape_indeed
-from scrapers.naukri_scraper import scrape_naukri
-from scrapers.jooble_api import JoobleJobAggregator
+from backend.app.scrapers.indeed_scraper import scrape_indeed
+from backend.app.scrapers.naukri_scraper import scrape_naukri
+from backend.app.scrapers.jooble_api import JoobleJobAggregator
 
 # Import database
 from database.db_operations import JobDatabase
@@ -63,6 +63,10 @@ def print_header(title):
 def scrape_all_jobs_daily(config):
     """Scrape ALL new jobs from multiple portals across various categories."""
     print_header("DAILY ALL JOBS AGGREGATOR - COMPREHENSIVE SCRAPING")
+    
+    cleanup_db = JobDatabase()
+    cleanup_db.delete_expired_jobs()
+    cleanup_db.close()
     
     start_time = datetime.now()
     print(f"Started at: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")

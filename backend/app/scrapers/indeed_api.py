@@ -1,5 +1,17 @@
 import requests
 import os
+import sys
+from datetime import datetime
+
+# Ensure repo root is on sys.path so root-level packages resolve correctly
+_repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+if _repo_root not in sys.path:
+    sys.path.insert(0, _repo_root)
+
+try:
+    from app.utils.date_utils import resolve_dates_for_job
+except ImportError:
+    from utils.date_utils import resolve_dates_for_job
 
 def fetch_indeed_jobs(query="python developer", location="India", num_results=10):
     """
@@ -54,8 +66,13 @@ def fetch_indeed_jobs(query="python developer", location="India", num_results=10
                     'skills': item.get('snippet', 'N/A'),  # Description snippet
                     'experience_required': 'N/A',
                     'job_portal_name': 'Indeed',
-                    'application_link': item.get('url', 'N/A')
+                    'application_link': item.get('url', 'N/A'),
+                    'fetched_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 }
+                
+                # Resolve dates to ensure no NULL values
+                resolve_dates_for_job(job_data)
+                
                 jobs.append(job_data)
             
             print(f"✅ Fetched {len(jobs)} jobs from Indeed")
@@ -112,8 +129,13 @@ def scrape_indeed_simple(keyword="python developer", location="India"):
                     'skills': 'N/A',
                     'experience_required': 'N/A',
                     'job_portal_name': 'Indeed',
-                    'application_link': link
+                    'application_link': link,
+                    'fetched_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 }
+                
+                # Resolve dates to ensure no NULL values
+                resolve_dates_for_job(job_data)
+                
                 jobs.append(job_data)
                 
             except Exception as e:

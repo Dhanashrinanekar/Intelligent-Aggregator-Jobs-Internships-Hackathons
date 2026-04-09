@@ -1,12 +1,18 @@
-# database/__init__.py
+"""Backend scraper package."""
 
 import sys
-import os
 
-# Add parent directory to path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Attempt to ensure UTF-8 output on Windows consoles.
+try:
+    if sys.stdout and sys.stdout.encoding and sys.stdout.encoding.lower() != 'utf-8':
+        sys.stdout.reconfigure(encoding='utf-8')
+except Exception:
+    pass
 
-# Import from db_operations module - REMOVED to avoid import issues
-# from database.db_operations import JobDatabase
+try:
+    if sys.stderr and sys.stderr.encoding and sys.stderr.encoding.lower() != 'utf-8':
+        sys.stderr.reconfigure(encoding='utf-8')
+except Exception:
+    pass
 
 __all__ = []

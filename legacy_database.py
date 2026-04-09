@@ -1,7 +1,8 @@
 import psycopg2
 from psycopg2.extras import execute_values
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
+import re
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -17,6 +18,77 @@ class JobDatabase:
         self.cursor = None
         self.connect()
     
+    @staticmethod
+    def _parse_date(value):
+        if isinstance(value, datetime):
+            return value
+        if not value or value == 'N/A':
+            return None
+        if isinstance(value, str):
+            value = value.strip()
+            lowered = value.lower()
+
+            if 'today' in lowered or 'just posted' in lowered:
+                return datetime.utcnow()
+            if 'yesterday' in lowered:
+                return datetime.utcnow() - timedelta(days=1)
+
+            ago_match = re.search(r'(\d+)\+?\s*(day|days|hour|hours|week|weeks|month|months)\s+ago', lowered)
+            if ago_match:
+                count = int(ago_match.group(1))
+                unit = ago_match.group(2)
+                if 'hour' in unit:
+                    return datetime.utcnow() - timedelta(hours=count)
+                if 'day' in unit:
+                    return datetime.utcnow() - timedelta(days=count)
+                if 'week' in unit:
+                    return datetime.utcnow() - timedelta(weeks=count)
+                if 'month' in unit:
+                    return datetime.utcnow() - timedelta(days=30 * count)
+
+            formats = [
+                '%Y-%m-%d',
+                '%Y-%m-%dT%H:%M:%S%z',
+                '%Y-%m-%dT%H:%M:%S',
+                '%Y-%m-%dT%H:%M:%SZ',
+                '%d-%m-%Y',
+                '%m/%d/%Y',
+                '%d/%m/%Y',
+                '%B %d, %Y',
+                '%d %B %Y'
+            ]
+            for fmt in formats:
+                try:
+                    return datetime.strptime(value, fmt)
+                except ValueError:
+                    continue
+            try:
+                if value.endswith('Z'):
+                    return datetime.fromisoformat(value.replace('Z', '+00:00'))
+                return datetime.fromisoformat(value)
+            except ValueError:
+                return None
+        return None
+
+    def _ensure_application_dates(self, job_data):
+        application_start = self._parse_date(job_data.get('application_start_date'))
+        application_end = self._parse_date(job_data.get('application_end_date'))
+        posted_date = self._parse_date(
+            job_data.get('posted_date') or job_data.get('postedDate') or job_data.get('date_posted')
+        )
+        deadline_date = self._parse_date(
+            job_data.get('validThrough') or job_data.get('deadline') or job_data.get('deadline_str')
+        )
+
+        if not application_start:
+            application_start = posted_date or datetime.utcnow()
+
+        if not application_end:
+            application_end = deadline_date or ((posted_date or application_start) + timedelta(days=20))
+
+        job_data['application_start_date'] = application_start
+        job_data['application_end_date'] = application_end
+
     def connect(self):
         """Connect to PostgreSQL database."""
         try:
@@ -83,14 +155,21 @@ class JobDatabase:
             %(application_link)s
         )
         ON CONFLICT (application_link) DO UPDATE SET
+            company_name = EXCLUDED.company_name,
+            role = EXCLUDED.role,
+            opportunity_type = EXCLUDED.opportunity_type,
+            application_start_date = EXCLUDED.application_start_date,
+            application_end_date = EXCLUDED.application_end_date,
+            skills = EXCLUDED.skills,
+            experience_required = EXCLUDED.experience_required,
+            job_portal_name = EXCLUDED.job_portal_name,
             updated_at = CURRENT_TIMESTAMP
         RETURNING id;
         """
         
         try:
-            # Set default values for date fields if not present
-            job_data.setdefault('application_start_date', None)
-            job_data.setdefault('application_end_date', None)
+            # Ensure application dates are populated before insert
+            self._ensure_application_dates(job_data)
             
             # Ensure required fields are present
             job_data.setdefault('opportunity_type', 'Full-time')
@@ -249,6 +328,24 @@ class JobDatabase:
             return deleted
         except Exception as e:
             print(f"❌ Error deleting old jobs: {e}")
+            self.conn.rollback()
+            return 0
+
+    def delete_expired_jobs(self):
+        """Delete expired jobs based on application_end_date."""
+        query = """
+        DELETE FROM opportunities
+        WHERE application_end_date < NOW()
+        RETURNING id;
+        """
+        try:
+            self.cursor.execute(query)
+            deleted = self.cursor.rowcount
+            self.conn.commit()
+            print(f"✅ Deleted {deleted} expired jobs")
+            return deleted
+        except Exception as e:
+            print(f"❌ Error deleting expired jobs: {e}")
             self.conn.rollback()
             return 0
     

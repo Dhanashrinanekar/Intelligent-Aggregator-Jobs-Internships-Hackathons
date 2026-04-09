@@ -31,8 +31,8 @@ async function apiRequest(endpoint, method = 'GET', body = null) {
     try {
         const response = await fetch(API_BASE_URL + endpoint, options);
         
-        // Handle 401 Unauthorized
-        if (response.status === 401) {
+        // Handle unauthorized access
+        if (response.status === 401 || response.status === 403) {
             localStorage.removeItem('token');
             window.location.href = '/login';
             throw new Error('Unauthorized');

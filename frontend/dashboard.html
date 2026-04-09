@@ -97,6 +97,8 @@
         
                     </div>
 
+                    <div id="resumeSection" class="mt-3"></div>
+
                     <!-- Skills Section -->
                     <div id="skillsSection" class="skills-display mt-2">
                     </div>
@@ -123,6 +125,8 @@
                             <option value="">All Types</option>
                             <option value="job">Job</option>
                             <option value="internship">Internship</option>
+                            <option value="competition">Competition</option>
+                            <option value="hackathon">Hackathon</option>
                         </select>
                     </div>
                     <div class="col-md-3">
@@ -131,6 +135,7 @@
                             <option value="Indeed">Indeed</option>
                             <option value="Naukri">Naukri</option>
                             <option value="Jooble">Jooble</option>
+                            <option value="Unstop">Unstop</option>
                         </select>
                     </div>
                     <div class="col-md-2">
@@ -223,26 +228,44 @@
                 document.getElementById('userEmail').textContent = user.email;
 
                 // Display resume status and skills
-                if (user.resume_file) {
-                    document.getElementById('resumeStatus').className = 'badge bg-success';
-                    document.getElementById('resumeStatus').innerHTML = '<i class="fas fa-check-circle me-1"></i>Resume Uploaded';
+                const resumeSection = document.getElementById('resumeSection');
+            if (user.resume_file) {
+                const resumeName = user.resume_file.split('/').pop().split('\\').pop();
+                resumeSection.innerHTML = `
+                    <div class="mb-2">
+                        <span class="badge bg-success"><i class="fas fa-check-circle me-1"></i>Resume Uploaded</span>
+                    </div>
+                    <div class="d-flex flex-wrap gap-2 align-items-center">
+                        <a class="btn btn-outline-primary btn-sm" href="/api/resume/download" target="_blank">
+                            <i class="fas fa-download me-1"></i>Download Resume
+                        </a>
+                        <button class="btn btn-primary btn-sm" type="button" onclick="uploadModal.show()">
+                            <i class="fas fa-upload me-1"></i>Update Resume
+                        </button>
+                        <span class="text-muted small">Current file: ${escapeHtml(resumeName)}</span>
+                    </div>
+                `;
 
-                    // Show skills
-                    if (user.skills && user.skills.trim() !== '') {
-                        const skillsArray = user.skills.split(',').map(s => s.trim());
-                        const skillsHtml = skillsArray
-                            .map(skill => `<span class="skill-badge"><i class="fas fa-check me-1"></i>${skill}</span>`)
-                            .join('');
-                        document.getElementById('skillsSection').innerHTML = `
-                            <div>
-                                <small class="text-muted">Your Skills:</small>
-                                <div>${skillsHtml}</div>
-                            </div>
-                        `;
-                    }
-                } else {
-                    document.getElementById('skillsSection').innerHTML = '';
+                if (user.skills && user.skills.trim() !== '') {
+                    const skillsArray = user.skills.split(',').map(s => s.trim());
+                    const skillsHtml = skillsArray
+                        .map(skill => `<span class="skill-badge"><i class="fas fa-check me-1"></i>${skill}</span>`)
+                        .join('');
+                    document.getElementById('skillsSection').innerHTML = `
+                        <div>
+                            <small class="text-muted">Your Skills:</small>
+                            <div>${skillsHtml}</div>
+                        </div>
+                    `;
                 }
+            } else {
+                resumeSection.innerHTML = `
+                    <div class="alert alert-warning py-2">
+                        <i class="fas fa-info-circle me-1"></i>No resume uploaded yet. Upload one to get personalized recommendations.
+                    </div>
+                `;
+                document.getElementById('skillsSection').innerHTML = '';
+            }
             } catch (error) {
                 console.error('Error loading user data:', error);
             }

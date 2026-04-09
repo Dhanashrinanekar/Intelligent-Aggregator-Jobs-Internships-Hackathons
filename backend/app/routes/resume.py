@@ -1,6 +1,6 @@
 """Resume Upload and Processing Routes - Improved Error Handling"""
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.auth.auth import get_current_user
@@ -90,7 +90,7 @@ async def upload_resume(
         
         # Update user record
         print("👤 Updating user record...")
-        current_user.resume_file = file_path
+        current_user.resume_file = safe_filename
         current_user.resume_text = resume_text
         current_user.skills = ", ".join(skills) if skills else None
         db.commit()
@@ -215,14 +215,14 @@ async def upload_resume(
         print(f"\n❌ HTTP Error: {http_err.detail}")
         print("="*70 + "\n")
         raise
-        
+
     except Exception as e:
         error_msg = str(e)
         print(f"\n❌ UPLOAD FAILED - Unexpected error: {error_msg}")
         print(f"Error type: {type(e).__name__}")
         traceback.print_exc()
         print("="*70 + "\n")
-        
+
         # Return JSON error response
         return JSONResponse(
             status_code=500,
@@ -231,3 +231,23 @@ async def upload_resume(
                 "error_type": type(e).__name__
             }
         )
+
+
+@router.get('/download')
+async def download_resume(
+    current_user: User = Depends(get_current_user)
+):
+    """Download the current user's uploaded resume."""
+    if not current_user.resume_file:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No resume uploaded")
+
+    resume_filename = os.path.basename(current_user.resume_file)
+    resume_path = current_user.resume_file
+
+    if not os.path.isabs(resume_path):
+        resume_path = os.path.join('uploads', 'resumes', resume_filename)
+
+    if not os.path.exists(resume_path):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resume file not found")
+
+    return FileResponse(path=resume_path, filename=resume_filename, media_type='application/octet-stream')

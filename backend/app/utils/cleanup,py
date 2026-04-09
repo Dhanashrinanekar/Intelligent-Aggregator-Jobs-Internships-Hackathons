@@ -1,0 +1,18 @@
+from datetime import datetime
+from app.database import SessionLocal
+from app.models import Opportunity
+
+def delete_expired_jobs():
+    db = SessionLocal()
+    try:
+        db.query(Opportunity).filter(
+            Opportunity.application_end_date < datetime.utcnow()
+        ).delete()
+
+        db.commit()
+        print("Expired jobs deleted")
+    except Exception as e:
+        db.rollback()
+        print(e)
+    finally:
+        db.close()

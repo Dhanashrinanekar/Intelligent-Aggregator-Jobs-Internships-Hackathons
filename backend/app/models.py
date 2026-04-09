@@ -39,8 +39,8 @@ class Opportunity(Base):
     company_name = Column(String(255), index=True)
     role = Column(String(500), index=True)
     opportunity_type = Column(String(100))  # job/internship
-    application_start_date = Column(DateTime(timezone=True))
-    application_end_date = Column(DateTime(timezone=True))
+    application_start_date = Column(DateTime(timezone=True), nullable=False)
+    application_end_date = Column(DateTime(timezone=True), nullable=False)
     skills = Column(Text)  # Comma-separated
     experience_required = Column(String(100))
     job_portal_name = Column(String(100))

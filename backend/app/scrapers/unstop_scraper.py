@@ -9,12 +9,19 @@ from webdriver_manager.chrome import ChromeDriverManager
 import time
 import random
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 import sys
 import os
 
-# Import database module
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Import date utilities
+_repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+if _repo_root not in sys.path:
+    sys.path.insert(0, _repo_root)
+
+try:
+    from app.utils.date_utils import resolve_dates_for_job
+except ImportError:
+    from utils.date_utils import resolve_dates_for_job
 
 # try:
 #     from database import JobDatabase
@@ -192,7 +199,13 @@ def scrape_unstop(keyword="python", category="jobs", num_pages=1, save_to_db=Tru
                 location = "N/A"
                 deadline = "N/A"
                 stipend = "N/A"
-                opp_type = category.capitalize()
+                category_map = {
+                    "jobs": "job",
+                    "internships": "internship",
+                    "competitions": "competition",
+                    "hackathons": "hackathon"
+                }
+                opp_type = category_map.get(category, "job")
                 
                 for line in lines:
                     line_lower = line.lower()
@@ -202,26 +215,39 @@ def scrape_unstop(keyword="python", category="jobs", num_pages=1, save_to_db=Tru
                         location = line
                     elif '₹' in line or 'stipend' in line_lower or 'salary' in line_lower:
                         stipend = line
-                    elif any(t in line_lower for t in ['internship', 'job', 'competition', 'hackathon']):
-                        opp_type = line
+                    elif 'internship' in line_lower:
+                        opp_type = 'internship'
+                    elif 'competition' in line_lower:
+                        opp_type = 'competition'
+                    elif 'hackathon' in line_lower:
+                        opp_type = 'hackathon'
+                    elif 'job' in line_lower:
+                        opp_type = 'job'
 
                 # Create opportunity data
+                scraped_now = datetime.now(timezone.utc)
                 opportunity_data = {
                     "company_name": company[:255] if company != "N/A" else "Unstop",
                     "role": role[:500],
                     "opportunity_type": opp_type[:100],
+                    # Dates:
+                    #   application_start_date → Unstop doesn't provide one → scraped_at
+                    #   application_end_date   → deadline_str if parseable   → scraped_at + 20 days
                     "application_start_date": None,
                     "application_end_date": None,
                     "skills": "N/A",
                     "experience_required": "N/A",
                     "job_portal_name": "Unstop.com",
                     "application_link": link,
-                    # Extra fields
+                    # Extra fields for display (not stored in DB)
                     "location": location,
                     "stipend": stipend,
-                    "deadline_str": deadline,
-                    "scraped_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    "deadline_str": deadline,   # raw text like "Ends: 30 Apr 2026"
+                    "scraped_at": scraped_now,  # datetime used as fallback posted_date
                 }
+                # Resolve application_start_date and application_end_date.
+                # resolve_dates_for_job will try to parse deadline_str as the expiry date.
+                resolve_dates_for_job(opportunity_data)
                 
                 opportunities.append(opportunity_data)
                 print(f"  ✓ [{idx}] {role[:60]}... - {company[:30]}")

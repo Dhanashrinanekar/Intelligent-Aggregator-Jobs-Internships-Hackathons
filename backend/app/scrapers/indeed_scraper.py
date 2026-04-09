@@ -12,9 +12,35 @@ from datetime import datetime
 import sys
 import os
 
-# Add parent directory to path to import database module
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-# from database.db_operations import JobDatabase  # Import only when needed
+# Ensure repo root is on sys.path so root-level packages resolve correctly
+_repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+if _repo_root not in sys.path:
+    sys.path.insert(0, _repo_root)
+
+try:
+    from app.utils.date_utils import resolve_dates_for_job
+except ImportError:
+    from utils.date_utils import resolve_dates_for_job
+
+
+def _clean_skill_tags(tags):
+    """Return only actual skills, filtering out salary/role/type metadata."""
+    irrelevant = [
+        '₹', 'rs', 'per', 'month', 'year', 'annum', 'lpa', 'full-time',
+        'part-time', 'contract', 'temporary', 'internship', 'freelance',
+        'hours', 'experience', 'posted', 'ago', 'new', 'job', 'location',
+        'salary', 'salary:', 'apply', 'hiring', 'spotlight'
+    ]
+    cleaned = []
+    for tag in tags:
+        text = tag.strip()
+        if not text:
+            continue
+        lower = text.lower()
+        if any(keyword in lower for keyword in irrelevant):
+            continue
+        cleaned.append(text)
+    return cleaned
 
 
 def scrape_indeed(keyword="python developer", location="India", num_pages=1, save_to_db=True):
@@ -125,13 +151,14 @@ def scrape_indeed(keyword="python developer", location="India", num_pages=1, sav
                 try:
                     snippet_elems = card.find_elements(By.CSS_SELECTOR, "div.slider_container li")
                     if snippet_elems:
-                        skills_list = [elem.text.strip() for elem in snippet_elems if elem.text.strip()]
-                        description = " | ".join(skills_list)
+                        raw_snippets = [elem.text.strip() for elem in snippet_elems if elem.text.strip()]
+                        description = " | ".join(raw_snippets)
+                        skills_list = _clean_skill_tags(raw_snippets)
                 except:
                     pass
                 
                 # Extract job type (Full-time, Contract, etc.)
-                job_type = "Full-time"  # Default
+                job_type = ""  # Will be set by scheduler
                 try:
                     metadata_elems = card.find_elements(By.CSS_SELECTOR, "div.metadata.css-5zy3wz.eu4oa1w0 div")
                     for elem in metadata_elems:
@@ -168,6 +195,9 @@ def scrape_indeed(keyword="python developer", location="India", num_pages=1, sav
                     "company_rating": rating,
                     "scraped_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 }
+                
+                # Resolve dates to ensure no NULL values
+                resolve_dates_for_job(job_data)
                 
                 jobs.append(job_data)
                 print(f"  ✓ [{idx}/{len(job_cards)}] {role} at {company}")

@@ -1,5 +1,6 @@
 import requests
 import json
+import re
 from datetime import datetime
 import sys
 import os
@@ -10,9 +11,17 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
-# Add parent directory to path to import database module
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-# from database.db_operations import JobDatabase  # Import only when needed
+# Ensure repo root is on sys.path so root-level packages resolve correctly
+_repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+if _repo_root not in sys.path:
+    sys.path.insert(0, _repo_root)
+
+# Sometimes this module is imported as part of the backend app package,
+# and sometimes it is run from the repository root. Support both paths.
+try:
+    from app.utils.date_utils import resolve_dates_for_job
+except ImportError:
+    from utils.date_utils import resolve_dates_for_job
 
 
 class JoobleJobAggregator:
@@ -240,6 +249,81 @@ class JoobleJobAggregator:
             traceback.print_exc()
             return []
     
+    def _extract_skills(self, job_data: Dict) -> str:
+        """Extract skills from API response where available."""
+        raw_skills = job_data.get("skills")
+        if raw_skills:
+            if isinstance(raw_skills, list):
+                return ", ".join([skill.strip() for skill in raw_skills if skill and skill.strip()]) or "N/A"
+            skills_text = str(raw_skills).strip()
+            if skills_text:
+                return skills_text
+
+        snippet = job_data.get("snippet") or job_data.get("description") or ""
+        if isinstance(snippet, str) and snippet.strip():
+            parts = [part.strip() for part in re.split(r"[\n·•,;]", snippet) if part.strip()]
+            cleaned = []
+            for part in parts:
+                lower = part.lower()
+                if len(part) < 2:
+                    continue
+                if any(term in lower for term in [
+                    "salary", "₹", "rs", "per", "month", "year", "annum", "lpa",
+                    "full-time", "part-time", "contract", "temporary", "internship", "freelance",
+                    "experience", "location", "apply", "job", "company", "role", "description",
+                    "posted", "updated", "date"
+                ]):
+                    continue
+                cleaned.append(part)
+            if cleaned:
+                return ", ".join(cleaned[:8])
+
+        return "N/A"
+
+    def _extract_experience(self, job_data: Dict) -> str:
+        """Extract experience requirements from API response where available."""
+        # Check for explicit experience field
+        raw_exp = job_data.get("experience") or job_data.get("experience_required")
+        if raw_exp:
+            exp_text = str(raw_exp).strip()
+            if exp_text and exp_text.lower() not in ["n/a", "na", "none", ""]:
+                return exp_text
+
+        # Try to extract from snippet/description
+        snippet = job_data.get("snippet") or job_data.get("description") or ""
+        if isinstance(snippet, str) and snippet.strip():
+            lower_snippet = snippet.lower()
+            
+            # Look for common experience patterns
+            exp_patterns = [
+                r"(\d+[-\s]*\d*\s*years?\s*experience)",
+                r"(experience\s*[:\-]\s*\d+[-\s]*\d*\s*years?)",
+                r"(\d+[-\s]*\d*\s*years?\s*of\s*experience)",
+                r"(minimum\s*\d+[-\s]*\d*\s*years?)",
+                r"(\d+[-\s]*\d*\s*years?\s*required)",
+                r"(fresher|entry\s*level|0[-\s]*\d*\s*years?)",
+                r"(mid[-\s]*level|senior|experienced)",
+            ]
+            
+            for pattern in exp_patterns:
+                match = re.search(pattern, lower_snippet, re.IGNORECASE)
+                if match:
+                    return match.group(1).strip()
+            
+            # Look for standalone year mentions that might indicate experience
+            year_matches = re.findall(r"(\d+[-\s]*\d*\s*years?)", lower_snippet, re.IGNORECASE)
+            if year_matches:
+                # Filter out salary-related years
+                filtered = []
+                for match in year_matches:
+                    context = lower_snippet[max(0, lower_snippet.find(match.lower())-20):lower_snippet.find(match.lower())+len(match)+20]
+                    if not any(term in context for term in ["salary", "₹", "rs", "per", "month", "year", "annum", "lpa", "package"]):
+                        filtered.append(match)
+                if filtered:
+                    return filtered[0].strip()
+
+        return "N/A"
+
     def _parse_job(self, job_data: Dict) -> Dict:
         """
         Parse job data from Jooble API response.
@@ -265,11 +349,11 @@ class JoobleJobAggregator:
         job_obj = {
             "company_name": job_data.get("company", "N/A"),
             "role": job_data.get("title", "N/A"),
-            "opportunity_type": job_data.get("type", "Full-time"),
+            "opportunity_type": job_data.get("type", ""),
             "application_start_date": None,
             "application_end_date": None,
-            "skills": "N/A",
-            "experience_required": "N/A",
+            "skills": self._extract_skills(job_data),
+            "experience_required": self._extract_experience(job_data),
             "job_portal_name": "Jooble.org",
             "application_link": job_data.get("link", "N/A"),
             # Extra fields for display
@@ -281,6 +365,9 @@ class JoobleJobAggregator:
             "job_id": job_data.get("id", "N/A"),
             "fetched_at": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }
+        
+        # Resolve dates to ensure no NULL values
+        resolve_dates_for_job(job_obj)
         
         return job_obj
 
