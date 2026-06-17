@@ -1,4 +1,3 @@
-
 """User Registration and Authentication Routes"""
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -27,9 +26,16 @@ async def send_otp(request: SendOTPRequest, db: Session = Depends(get_db)):
         )
     
     try:
+        # Check domain exists before wasting an OTP send
+        if not OTPService.is_domain_reachable(email):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This email domain doesn't appear to exist. Please enter a valid email address."
+            )
+
         # Generate and create OTP
         otp = OTPService.create_otp(db, email)
-        
+
         # Send OTP to email
         success = OTPService.send_otp_email(email, otp)
         

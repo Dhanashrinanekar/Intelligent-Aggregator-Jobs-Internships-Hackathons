@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Upload Resume - AI Job Aggregator</title>
+    <title>Upload Resume - JobMatch</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="static/css/style.css">
@@ -11,9 +11,7 @@
 <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
         <div class="container">
-            <a class="navbar-brand" href="/">
-                <i class="fas fa-briefcase me-2"></i>AI Job Aggregator
-            </a>
+            <a class="navbar-brand" href="/"><i class="fas fa-briefcase me-2"></i>JobMatch</a>
             <div class="collapse navbar-collapse">
                 <ul class="navbar-nav ms-auto">
                     <li class="nav-item"><a class="nav-link" href="/dashboard">Dashboard</a></li>
@@ -27,52 +25,39 @@
 
     <div class="container py-5">
         <div class="row justify-content-center">
-            <div class="col-md-8">
+            <div class="col-md-7">
                 <div class="card shadow">
                     <div class="card-body p-5">
-                        <h2 class="text-center mb-4">
-                            <i class="fas fa-file-upload text-primary"></i>
-                            Upload Your Resume
+                        <h2 class="text-center mb-2" id="pageTitle">
+                            <i class="fas fa-file-upload text-primary"></i> Upload Your Resume
                         </h2>
-                        <p class="text-center text-muted mb-4">Upload your resume to get AI-powered job recommendations</p>
+                        <p class="text-center text-muted mb-4" id="pageSubtitle">Upload your resume to get personalized job recommendations</p>
 
                         <div id="alert-container"></div>
+
+                        <!-- Shown only when resume already exists -->
                         <div id="existingResumeContainer" class="mb-4"></div>
 
                         <form id="uploadForm">
                             <div class="mb-4">
-                                <label for="resumeFile" class="form-label">Select Resume (PDF or DOCX)</label>
+                                <label for="resumeFile" class="form-label" id="fileLabel">Select Resume (PDF or DOCX)</label>
                                 <input class="form-control form-control-lg" type="file" id="resumeFile" accept=".pdf,.docx" required>
                                 <small class="text-muted">Maximum file size: 5MB</small>
                             </div>
-
                             <div class="d-grid">
                                 <button type="submit" class="btn btn-primary btn-lg" id="uploadBtn">
-                                    <i class="fas fa-cloud-upload-alt me-2"></i>Upload & Process Resume
+                                    <i class="fas fa-cloud-upload-alt me-2"></i><span id="uploadBtnText">Upload & Process Resume</span>
                                 </button>
                             </div>
                         </form>
 
-                        <div id="processingInfo" class="mt-4" style="display: none;">
+                        <div id="processingInfo" class="mt-4" style="display:none;">
                             <div class="alert alert-info">
                                 <h6><i class="fas fa-cog fa-spin me-2"></i>Processing your resume...</h6>
                                 <div class="progress mt-2">
-                                    <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: 100%"></div>
+                                    <div class="progress-bar progress-bar-striped progress-bar-animated" style="width:100%"></div>
                                 </div>
-                                <small class="mt-2 d-block">Extracting skills, generating vectors, and matching with jobs...</small>
-                            </div>
-                        </div>
-
-                        <div id="results" class="mt-4" style="display: none;">
-                            <div class="alert alert-success">
-                                <h6><i class="fas fa-check-circle me-2"></i>Resume Processed Successfully!</h6>
-                                <hr>
-                                <p><strong>Skills Extracted:</strong></p>
-                                <div id="extractedSkills"></div>
-                                <p class="mt-3"><strong>Job Matches Found:</strong> <span id="matchesCount" class="badge bg-primary">0</span></p>
-                                <a href="/recommendations" class="btn btn-success mt-3">
-                                    <i class="fas fa-star me-2"></i>View Recommendations
-                                </a>
+                                <small class="mt-2 d-block">Extracting skills and matching with jobs...</small>
                             </div>
                         </div>
                     </div>
@@ -89,116 +74,77 @@
 
         const form = document.getElementById('uploadForm');
         const uploadBtn = document.getElementById('uploadBtn');
+        const uploadBtnText = document.getElementById('uploadBtnText');
         const processingInfo = document.getElementById('processingInfo');
-        const results = document.getElementById('results');
         const alertContainer = document.getElementById('alert-container');
         const existingResumeContainer = document.getElementById('existingResumeContainer');
+
+        // Determine mode: upload vs update
+        let isUpdate = false;
+
+        async function loadExistingResume() {
+            try {
+                const user = await apiRequest('/api/users/me');
+                if (user.resume_file) {
+                    isUpdate = true;
+                    const filename = user.resume_file.split('/').pop().split('\\').pop();
+                    // Update page copy to reflect "update" mode
+                    document.getElementById('pageTitle').innerHTML = '<i class="fas fa-sync-alt text-primary"></i> Update Your Resume';
+                    document.getElementById('pageSubtitle').textContent = 'Replace your current resume with a new one';
+                    uploadBtnText.textContent = 'Update & Process Resume';
+                    document.getElementById('fileLabel').textContent = 'Select New Resume (PDF or DOCX)';
+
+                    existingResumeContainer.innerHTML = `
+                        <div class="alert alert-success">
+                            <i class="fas fa-check-circle me-2"></i>
+                            <strong>Current resume:</strong> ${escapeHtml(filename)}
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Error loading resume info:', error);
+            }
+        }
 
         loadExistingResume();
 
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
-
             const fileInput = document.getElementById('resumeFile');
             const file = fileInput.files[0];
-
-            if (!file) {
-                showAlert('Please select a file', 'danger');
-                return;
-            }
-
-            // Validate file size (5MB)
-            if (file.size > 5 * 1024 * 1024) {
-                showAlert('File size exceeds 5MB', 'danger');
-                return;
-            }
-
-            // Validate file type
-            const validTypes = ['.pdf', '.docx'];
+            if (!file) { showAlert('Please select a file', 'danger'); return; }
+            if (file.size > 5 * 1024 * 1024) { showAlert('File size exceeds 5MB', 'danger'); return; }
             const fileExt = '.' + file.name.split('.').pop().toLowerCase();
-            if (!validTypes.includes(fileExt)) {
-                showAlert('Only PDF and DOCX files are allowed', 'danger');
-                return;
-            }
+            if (!['.pdf', '.docx'].includes(fileExt)) { showAlert('Only PDF and DOCX files are allowed', 'danger'); return; }
 
             uploadBtn.disabled = true;
             uploadBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Uploading...';
             processingInfo.style.display = 'block';
-            results.style.display = 'none';
 
             try {
                 const formData = new FormData();
                 formData.append('file', file);
-
                 const token = localStorage.getItem('token');
-                console.log('📤 Sending upload request...');
-                
                 const response = await fetch('/api/resume/upload-resume', {
                     method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${token}`
-                    },
+                    headers: { 'Authorization': `Bearer ${token}` },
                     body: formData
                 });
-
-                console.log('📥 Response received:', response.status, response.statusText);
-                
-                let data;
-                try {
-                    data = await response.json();
-                    console.log('📦 Response data:', data);
-                } catch (parseError) {
-                    console.error('❌ Error parsing JSON:', parseError);
-                    throw new Error('Invalid response format from server');
-                }
-
+                const data = await response.json();
                 if (response.ok) {
-                    console.log('✅ Upload successful, showing results...');
                     processingInfo.style.display = 'none';
-                    results.style.display = 'block';
-                    
-                    // Display extracted skills
-                    const skillsElement = document.getElementById('extractedSkills');
-                    if (skillsElement) {
-                        console.log('🎯 Setting skills:', data.skills_extracted);
-                        skillsElement.innerHTML = data.skills_extracted
-                            .map(skill => `<span class="badge bg-primary me-1 mb-1">${skill}</span>`)
-                            .join('');
-                    } else {
-                        console.error('❌ extractedSkills element not found!');
-                    }
-                    
-                    const matchesElement = document.getElementById('matchesCount');
-                    if (matchesElement) {
-                        console.log('📊 Setting matches count:', data.matches_found);
-                        matchesElement.textContent = data.matches_found;
-                    } else {
-                        console.error('❌ matchesCount element not found!');
-                    }
-                    
-                    console.log('✅ Resume uploaded successfully:', data);
-                    
-                    // Redirect to upload-success page after 2 seconds
-                    setTimeout(() => {
-                        console.log('🔄 Redirecting to upload-success page...');
-                        window.location.href = '/upload-success';
-                    }, 2000);
+                    showAlert(`Resume ${isUpdate ? 'updated' : 'uploaded'} successfully! Redirecting...`, 'success');
+                    setTimeout(() => { window.location.href = '/upload-success'; }, 1500);
                 } else {
                     processingInfo.style.display = 'none';
-                    const errorMsg = data.detail || data.message || 'Upload failed';
-                    console.error('❌ Upload error:', response.status, errorMsg);
-                    showAlert(errorMsg, 'danger');
+                    showAlert(data.detail || data.message || 'Upload failed', 'danger');
                 }
             } catch (error) {
                 processingInfo.style.display = 'none';
-                console.error('❌ Network error details:', error);
-                console.error('Error type:', error.constructor.name);
-                console.error('Error message:', error.message);
-                console.error('Error stack:', error.stack);
-                showAlert(`Network error: ${error.message || 'Please check your connection and try again.'}`, 'danger');
+                showAlert(`Network error: ${error.message}`, 'danger');
             } finally {
                 uploadBtn.disabled = false;
-                uploadBtn.innerHTML = '<i class="fas fa-cloud-upload-alt me-2"></i>Upload & Process Resume';
+                uploadBtn.innerHTML = `<i class="fas fa-cloud-upload-alt me-2"></i><span id="uploadBtnText">${isUpdate ? 'Update' : 'Upload'} & Process Resume</span>`;
             }
         });
 
@@ -212,32 +158,7 @@
         }
 
         function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text || '';
-            return div.innerHTML;
-        }
-
-        async function loadExistingResume() {
-            try {
-                const user = await apiRequest('/api/users/me');
-                if (user.resume_file) {
-                    const filename = user.resume_file.split('/').pop().split('\\').pop();
-                    existingResumeContainer.innerHTML = `
-                        <div class="alert alert-success">
-                            <h6 class="mb-2"><i class="fas fa-check-circle me-1"></i>Resume already uploaded</h6>
-                            <p class="mb-2">Current file: <strong>${escapeHtml(filename)}</strong></p>
-                            <div class="d-flex gap-2 flex-wrap">
-                                <a href="/api/resume/download" target="_blank" class="btn btn-outline-primary btn-sm">
-                                    <i class="fas fa-download me-1"></i>Download Existing Resume
-                                </a>
-                                <span class="text-muted align-self-center">Upload a new file to replace it.</span>
-                            </div>
-                        </div>
-                    `;
-                }
-            } catch (error) {
-                console.error('Error loading resume info:', error);
-            }
+            const div = document.createElement('div'); div.textContent = text || ''; return div.innerHTML;
         }
 
         document.getElementById('logoutBtn').addEventListener('click', logout);

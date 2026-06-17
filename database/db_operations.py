@@ -71,6 +71,10 @@ class JobDatabase:
         application_end_date:
             API expiry date (validThrough / deadline / …)
             → start_date + 20 days
+
+        ✅ FIX: location, salary, description now use `or "N/A"` instead of
+        setdefault() — this handles None, empty string AND missing keys,
+        whereas setdefault() only handles missing keys.
         """
         # Ensure a fallback posted timestamp exists so start/end dates can be derived.
         if not job_data.get('scraped_at') and not job_data.get('fetched_at') and not job_data.get('posted_date'):
@@ -87,11 +91,56 @@ class JobDatabase:
         if job_data.get("application_end_date") is None:
             job_data["application_end_date"] = now + timedelta(days=20)
 
+        # Set defaults for required fields
         job_data.setdefault("opportunity_type", "Full-time")
         job_data.setdefault("skills", "N/A")
         job_data.setdefault("experience_required", "N/A")
 
+        # ✅ FIX: Use `or "N/A"` instead of setdefault()
+        # Reason: setdefault() only fills in the key if it's MISSING entirely.
+        #         If the scraper passes location=None or location="", setdefault()
+        #         does nothing and NULL gets stored in the DB.
+        #         `or "N/A"` catches None, "", 0, False — all falsy values.
+        job_data["location"]    = job_data.get("location")    or "N/A"
+        job_data["salary"]      = job_data.get("salary")      or "N/A"
+        job_data["description"] = job_data.get("description") or "N/A"
+
         return job_data
+
+    # ------------------------------------------------------------------
+    # Fix existing NULL rows in the database (run once)
+    # ------------------------------------------------------------------
+
+    def fix_null_fields(self) -> int:
+        """
+        ✅ NEW METHOD: One-time fix to update existing rows that have NULL
+        in location, salary, or description columns.
+
+        Run this once after deploying the fix to clean up historical data.
+
+        Returns the number of rows updated.
+        """
+        fix_query = """
+        UPDATE opportunities
+        SET
+            location    = COALESCE(NULLIF(TRIM(location), ''),    'N/A'),
+            salary      = COALESCE(NULLIF(TRIM(salary), ''),      'N/A'),
+            description = COALESCE(NULLIF(TRIM(description), ''), 'N/A')
+        WHERE
+            location    IS NULL OR location    = ''
+            OR salary      IS NULL OR salary      = ''
+            OR description IS NULL OR description = '';
+        """
+        try:
+            self.cursor.execute(fix_query)
+            updated_count = self.cursor.rowcount
+            self.conn.commit()
+            print(f"✅ Fixed {updated_count} rows — NULL location/salary/description set to 'N/A'")
+            return updated_count
+        except Exception as e:
+            print(f"❌ Error fixing NULL fields: {e}")
+            self.conn.rollback()
+            return 0
 
     # ------------------------------------------------------------------
     # Insert
@@ -105,6 +154,8 @@ class JobDatabase:
           - application_start_date = api_start OR posted_date OR now
           - application_end_date   = api_expiry OR start_date + 20 days
 
+        location / salary / description: scraper value OR "N/A" (never NULL)
+
         Returns new row id, or None if duplicate / error.
         """
         insert_query = """
@@ -117,7 +168,10 @@ class JobDatabase:
             skills,
             experience_required,
             job_portal_name,
-            application_link
+            application_link,
+            location,
+            salary,
+            description
         ) VALUES (
             %(company_name)s,
             %(role)s,
@@ -127,18 +181,24 @@ class JobDatabase:
             %(skills)s,
             %(experience_required)s,
             %(job_portal_name)s,
-            %(application_link)s
+            %(application_link)s,
+            %(location)s,
+            %(salary)s,
+            %(description)s
         )
         ON CONFLICT (application_link) DO UPDATE SET
-            company_name = EXCLUDED.company_name,
-            role = EXCLUDED.role,
-            opportunity_type = EXCLUDED.opportunity_type,
+            company_name           = EXCLUDED.company_name,
+            role                   = EXCLUDED.role,
+            opportunity_type       = EXCLUDED.opportunity_type,
             application_start_date = EXCLUDED.application_start_date,
-            application_end_date = EXCLUDED.application_end_date,
-            skills = EXCLUDED.skills,
-            experience_required = EXCLUDED.experience_required,
-            job_portal_name = EXCLUDED.job_portal_name,
-            updated_at = CURRENT_TIMESTAMP
+            application_end_date   = EXCLUDED.application_end_date,
+            skills                 = EXCLUDED.skills,
+            experience_required    = EXCLUDED.experience_required,
+            job_portal_name        = EXCLUDED.job_portal_name,
+            location               = EXCLUDED.location,
+            salary                 = EXCLUDED.salary,
+            description            = EXCLUDED.description,
+            updated_at             = CURRENT_TIMESTAMP
         RETURNING id;
         """
         try:
@@ -171,15 +231,21 @@ class JobDatabase:
             job_id = self.insert_job(job)
             if job_id:
                 inserted_count += 1
-                print(f"  ✓ [{idx}/{len(jobs_list)}] Inserted: {job.get('role', 'Unknown')}")
+                # ✅ Show location, salary, description in success message
+                location_info = (job.get('location') or 'N/A')[:30]
+                salary_info   = (job.get('salary')   or 'N/A')[:20]
+                print(
+                    f"  ✓ [{idx}/{len(jobs_list)}] Inserted: "
+                    f"{job.get('role', 'Unknown')} @ {location_info} | 💰 {salary_info}"
+                )
             else:
                 skipped_count += 1
                 print(f"  ⏭️  [{idx}/{len(jobs_list)}] Skipped (duplicate): {job.get('role', 'Unknown')}")
 
         print(f"\n📊 Database Insert Summary:")
-        print(f"   ✅ Inserted: {inserted_count} jobs")
+        print(f"   ✅ Inserted:             {inserted_count} jobs")
         print(f"   ⏭️  Skipped (duplicates): {skipped_count} jobs")
-        print(f"   📝 Total processed: {len(jobs_list)} jobs")
+        print(f"   📝 Total processed:      {len(jobs_list)} jobs")
 
         return inserted_count
 
@@ -321,22 +387,29 @@ class JobDatabase:
     def get_statistics(self) -> dict:
         stats_query = """
         SELECT
-            COUNT(*)                                                        AS total_jobs,
-            COUNT(DISTINCT company_name)                                    AS total_companies,
-            COUNT(DISTINCT job_portal_name)                                 AS total_portals,
+            COUNT(*)                                                         AS total_jobs,
+            COUNT(DISTINCT company_name)                                     AS total_companies,
+            COUNT(DISTINCT job_portal_name)                                  AS total_portals,
             COUNT(*) FILTER (WHERE created_at > NOW() - INTERVAL '24 hours') AS jobs_today,
-            COUNT(*) FILTER (WHERE application_end_date < NOW())            AS expired_jobs
+            COUNT(*) FILTER (WHERE application_end_date < NOW())             AS expired_jobs,
+            -- ✅ NEW: Count how many rows still have NULL/N/A in these columns
+            COUNT(*) FILTER (WHERE location    IS NULL OR location    = 'N/A') AS missing_location,
+            COUNT(*) FILTER (WHERE salary      IS NULL OR salary      = 'N/A') AS missing_salary,
+            COUNT(*) FILTER (WHERE description IS NULL OR description = 'N/A') AS missing_description
         FROM opportunities;
         """
         try:
             self.cursor.execute(stats_query)
             result = self.cursor.fetchone()
             return {
-                "total_jobs":         result[0],
-                "total_companies":    result[1],
-                "total_portals":      result[2],
-                "jobs_scraped_today": result[3],
-                "expired_jobs":       result[4],
+                "total_jobs":           result[0],
+                "total_companies":      result[1],
+                "total_portals":        result[2],
+                "jobs_scraped_today":   result[3],
+                "expired_jobs":         result[4],
+                "missing_location":     result[5],   # ✅ NEW
+                "missing_salary":       result[6],   # ✅ NEW
+                "missing_description":  result[7],   # ✅ NEW
             }
         except Exception as e:
             print(f"❌ Error getting statistics: {e}")
@@ -384,19 +457,59 @@ def cleanup_expired_jobs() -> int:
     return count
 
 
-if __name__ == "__main__":
-    print("🔧 Testing Database Connection...\n")
+# ✅ NEW: Standalone helper to fix existing NULL rows (run once after deploy)
+def fix_existing_null_fields() -> int:
+    """
+    One-time migration helper.
+    Updates all existing rows that have NULL in location / salary / description.
 
+    Usage:
+        python job_database.py --fix-nulls
+    OR import and call directly:
+        from job_database import fix_existing_null_fields
+        fix_existing_null_fields()
+    """
     db = JobDatabase()
+    count = db.fix_null_fields()
+    db.close()
+    return count
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Job Database Utility")
+    parser.add_argument(
+        "--fix-nulls",
+        action="store_true",
+        help="Fix existing NULL location/salary/description rows (run once after deploy)",
+    )
+    args = parser.parse_args()
+
+    print("🔧 Testing Database Connection...\n")
+    db = JobDatabase()
+
+    # ✅ NEW: --fix-nulls flag runs the one-time migration
+    if args.fix_nulls:
+        print("\n🔄 Running one-time NULL field fix...")
+        removed = db.fix_null_fields()
+        print(f"✅ Fixed {removed} rows.")
+        db.close()
+        exit(0)
 
     if db.verify_table():
         stats = db.get_statistics()
         print(f"\n📊 Database Statistics:")
-        print(f"   Total Jobs:      {stats.get('total_jobs', 0)}")
-        print(f"   Total Companies: {stats.get('total_companies', 0)}")
-        print(f"   Total Portals:   {stats.get('total_portals', 0)}")
-        print(f"   Jobs Today:      {stats.get('jobs_scraped_today', 0)}")
-        print(f"   Expired Jobs:    {stats.get('expired_jobs', 0)}")
+        print(f"   Total Jobs:           {stats.get('total_jobs', 0)}")
+        print(f"   Total Companies:      {stats.get('total_companies', 0)}")
+        print(f"   Total Portals:        {stats.get('total_portals', 0)}")
+        print(f"   Jobs Today:           {stats.get('jobs_scraped_today', 0)}")
+        print(f"   Expired Jobs:         {stats.get('expired_jobs', 0)}")
+        # ✅ NEW: Show data quality stats
+        print(f"\n📋 Data Quality:")
+        print(f"   Missing Location:     {stats.get('missing_location', 0)}")
+        print(f"   Missing Salary:       {stats.get('missing_salary', 0)}")
+        print(f"   Missing Description:  {stats.get('missing_description', 0)}")
 
         # Clean up expired jobs on every run
         removed = db.delete_expired_jobs()
@@ -406,8 +519,15 @@ if __name__ == "__main__":
         if recent:
             print(f"\n📋 Recent Jobs (Last 24 hours):")
             for job in recent:
-                end = job.get("application_end_date", "N/A")
-                print(f"   • {job['role']} @ {job['company_name']} | ends {end}")
+                end         = job.get("application_end_date", "N/A")
+                location    = job.get("location",    "N/A")
+                salary      = job.get("salary",      "N/A")
+                description = job.get("description", "N/A")
+                print(f"   • {job['role']} @ {job['company_name']}")
+                print(f"     📍 {location}")
+                print(f"     💰 {salary}")
+                print(f"     📝 {description[:80]}{'...' if len(str(description)) > 80 else ''}")
+                print(f"     🗓️  Ends: {end}")
 
     db.close()
     print("\n✅ Database test completed!")

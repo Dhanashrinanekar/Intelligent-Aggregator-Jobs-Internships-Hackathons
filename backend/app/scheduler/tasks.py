@@ -74,6 +74,8 @@ def _save_jobs_to_db(jobs: list, opportunity_type: str):
                 application_link=link,
                 application_start_date=job.get("application_start_date"),
                 application_end_date=job.get("application_end_date"),
+                created_at=datetime.now(),
+                updated_at=datetime.now(),
             ))
             inserted += 1
         db.commit()
@@ -226,14 +228,26 @@ def generate_job_vectors():
         db.close()
 
 
-def match_and_notify():
-    """Match users with jobs and send notifications"""
+def match_users():
+    """Re-run similarity matching for all users against new jobs (no email)"""
     db = SessionLocal()
     try:
         matcher = MatcherService(db)
-        matcher.match_all_users_with_new_jobs(threshold=0.75)
+        matcher.match_all_users_with_new_jobs(threshold=0.30)
+        print("✅ match_users complete")
+    finally:
+        db.close()
+
+
+def send_weekly_digest():
+    """Send top-5 job recommendation digest to all users — runs every Sunday 9 AM"""
+    print(f"\n{'='*60}")
+    print(f"📧 [{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Starting weekly digest...")
+    print(f"{'='*60}")
+    db = SessionLocal()
+    try:
         email_service = EmailService()
-        email_service.send_job_match_notification(db)
+        email_service.send_weekly_digest(db)
     finally:
         db.close()
 
@@ -310,8 +324,11 @@ def start_scheduler():
     # Vectorize new jobs every hour
     scheduler.add_job(generate_job_vectors, 'interval', hours=1)
 
-    # Match users and notify every 2 hours
-    scheduler.add_job(match_and_notify, 'interval', hours=2)
+    # Re-match users with new jobs every 2 hours (no email)
+    scheduler.add_job(match_users, 'interval', hours=2)
+
+    # Send weekly top-5 digest every Sunday at 9:00 AM
+    scheduler.add_job(send_weekly_digest, 'cron', day_of_week='sun', hour=9, minute=0)
 
     # Cleanup expired jobs daily
     scheduler.add_job(cleanup_expired_jobs, 'interval', hours=24)

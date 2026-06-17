@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Job Recommendations - AI Job Aggregator</title>
+    <title>Job Recommendations - JobMatch</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="static/css/style.css">
@@ -12,12 +12,12 @@
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
         <div class="container">
             <a class="navbar-brand" href="/">
-                <i class="fas fa-briefcase me-2"></i>AI Job Aggregator
+                <i class="fas fa-briefcase me-2"></i>JobMatch
             </a>
             <div class="collapse navbar-collapse">
                 <ul class="navbar-nav ms-auto">
                     <li class="nav-item"><a class="nav-link" href="/dashboard">Dashboard</a></li>
-                    <li class="nav-item"><a class="nav-link" href="/upload-resume">Upload Resume</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/upload-resume">Update Resume</a></li>
                     <li class="nav-item"><a class="nav-link" href="/jobs">Browse Jobs</a></li>
                     <li class="nav-item"><a class="nav-link" href="#" id="logoutBtn">Logout</a></li>
                 </ul>
@@ -69,6 +69,45 @@
             }
         }
 
+        function escapeHtml(text) {
+            if(!text) return '';
+            const tmp = document.createElement('div');
+            tmp.innerHTML = text;
+            const stripped = (tmp.textContent || tmp.innerText || '').replace(/[\xa0]/g, ' ').trim();
+            const div = document.createElement('div');
+            div.textContent = stripped;
+            return div.innerHTML;
+        }
+
+        // Strip HTML tags, entities, # noise from scraped job data
+        function cleanText(val) {
+            if (!val) return '';
+            const tmp = document.createElement('div');
+            tmp.innerHTML = val
+                .replace(/<[^>]*>/g, ' ')
+                .replace(/&nbsp;/gi, ' ')
+                .replace(/&amp;/gi, '&')
+                .replace(/&lt;/gi, '<')
+                .replace(/&gt;/gi, '>');
+            let text = (tmp.textContent || tmp.innerText || val);
+            return text
+                .replace(/#/g, '')
+                .replace(/\.\.\.+/g, '')
+                .replace(/\s*,\s*/g, ', ')
+                .replace(/,\s*,/g, ',')
+                .replace(/^[\s,]+|[\s,]+$/g, '')
+                .replace(/\s{2,}/g, ' ')
+                .trim();
+        }
+
+        function isValid(val) {
+            if (!val) return false;
+            const tmp = document.createElement('div');
+            tmp.innerHTML = val;
+            const cleaned = (tmp.textContent || tmp.innerText || '').replace(/&nbsp;/gi,' ').replace(/#/g,'').trim().toLowerCase();
+            return cleaned !== '' && cleaned !== 'n/a' && cleaned !== 'null' && cleaned !== 'not specified' && cleaned !== 'na' && cleaned !== 'none';
+        }
+
         function displayRecommendations(recommendations) {
             const container = document.getElementById('recommendationsContainer');
 
@@ -78,7 +117,7 @@
                         <div class="card-body">
                             <i class="fas fa-inbox fa-4x text-muted mb-3"></i>
                             <h4>No recommendations yet</h4>
-                            <p class="text-muted">Upload your resume to get AI-powered job recommendations!</p>
+                            <p class="text-muted">Upload your resume to get personalized job recommendations!</p>
                             <a href="/upload-resume" class="btn btn-primary mt-3">
                                 <i class="fas fa-upload me-2"></i>Upload Resume
                             </a>
@@ -91,9 +130,6 @@
             container.innerHTML = recommendations.map((rec, index) => {
                 const matchPercent = (rec.similarity_score * 100).toFixed(1);
                 const matchClass = matchPercent >= 90 ? 'success' : matchPercent >= 80 ? 'primary' : matchPercent >= 50 ? 'info' : 'warning';
-
-                const showSkills = rec.skills && rec.skills !== 'Not specified' && rec.skills.toLowerCase() !== 'null';
-            const showExperience = rec.experience_required && rec.experience_required !== 'Not specified' && rec.experience_required.toLowerCase() !== 'null';
 
             return `
                     <div class="card mb-3 shadow-sm recommendation-card">
@@ -111,14 +147,14 @@
                                         <span class="badge bg-primary me-2">${rec.opportunity_type}</span>
                                         <span class="badge bg-${matchClass}">${matchPercent}% Match</span>
                                     </p>
-                                    ${showSkills ? `
+                                    ${isValid(rec.skills) ? `
                                         <p class="small text-muted mb-1">
-                                            <strong>Required Skills:</strong> ${rec.skills}
+                                            <strong>Required Skills:</strong> ${cleanText(rec.skills)}
                                         </p>
                                     ` : ''}
-                                    ${showExperience ? `
+                                    ${isValid(rec.experience_required) ? `
                                         <p class="small text-muted mb-0">
-                                            <strong>Experience:</strong> ${rec.experience_required}
+                                            <strong>Experience:</strong> ${cleanText(rec.experience_required)}
                                         </p>
                                     ` : ''}
                                 </div>

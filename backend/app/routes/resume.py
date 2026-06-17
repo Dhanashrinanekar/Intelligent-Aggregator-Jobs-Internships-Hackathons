@@ -153,7 +153,7 @@ async def upload_resume(
                         sim_result = cosine_similarity([resume_vector], [job_vector])
                         similarity = float(sim_result[0][0])
                         
-                        if similarity >= 0.25:
+                        if similarity >= 0.30:
                             matches_list.append({
                                 'job_id': job.id,
                                 'similarity': similarity
@@ -251,3 +251,35 @@ async def download_resume(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resume file not found")
 
     return FileResponse(path=resume_path, filename=resume_filename, media_type='application/octet-stream')
+
+
+@router.get('/view')
+async def view_resume(
+    current_user: User = Depends(get_current_user)
+):
+    """View the current user's uploaded resume inline in the browser."""
+    if not current_user.resume_file:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No resume uploaded")
+
+    resume_filename = os.path.basename(current_user.resume_file)
+    resume_path = current_user.resume_file
+
+    if not os.path.isabs(resume_path):
+        resume_path = os.path.join('uploads', 'resumes', resume_filename)
+
+    if not os.path.exists(resume_path):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resume file not found")
+
+    # Serve PDF inline so the browser opens it; DOCX falls back to download
+    if resume_filename.lower().endswith('.pdf'):
+        from fastapi.responses import Response
+        with open(resume_path, 'rb') as f:
+            content = f.read()
+        return Response(
+            content=content,
+            media_type='application/pdf',
+            headers={'Content-Disposition': f'inline; filename="{resume_filename}"'}
+        )
+    else:
+        # For DOCX, trigger download since browsers can't render it natively
+        return FileResponse(path=resume_path, filename=resume_filename, media_type='application/octet-stream')
